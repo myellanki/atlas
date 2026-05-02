@@ -1,11 +1,15 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useAppStore } from "@/lib/store";
-import { useListTeams, useCreateTeam, getListTeamsQueryKey } from "@workspace/api-client-react";
+import {
+  useListTeams, useCreateTeam, getListTeamsQueryKey,
+  useListCards
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard, Tags, Settings, UserCircle,
-  Plus, CalendarDays
+  Plus, CalendarDays, Layers, Bell, BellOff,
+  AlertCircle, Clock, ChevronDown, ChevronRight, X
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem,
@@ -23,8 +27,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { format, isToday, isPast, parseISO } from "date-fns";
 
 const TEAM_COLORS = [
   "#6366f1", "#0ea5e9", "#10b981", "#f59e0b",
@@ -37,11 +44,15 @@ function slugify(name: string) {
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
-  const { role, setRole } = useAppStore();
+  const { role, setRole, setSelectedCardId } = useAppStore();
   const { data: teams } = useListTeams();
+  const { data: allCards } = useListCards({});
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const createTeam = useCreateTeam();
+
+  // Alerts panel state
+  const [alertsOpen, setAlertsOpen] = useState(false);
 
   // New team dialog state
   const [showNewTeam, setShowNewTeam] = useState(false);
@@ -52,11 +63,34 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [slugEdited, setSlugEdited] = useState(false);
   const [creating, setCreating] = useState(false);
 
+  // ── Compute urgent cards ────────────────────────────────────────────────────
+  const urgentCards = useMemo(() => {
+    if (!allCards) return [];
+    return allCards.filter(c => {
+      if (!c.dueDate || c.status === "done") return false;
+      const d = parseISO(c.dueDate);
+      return isPast(d) || isToday(d); // overdue or due today
+    }).sort((a, b) => {
+      // overdue first, then due today
+      const aD = parseISO(a.dueDate!);
+      const bD = parseISO(b.dueDate!);
+      if (isPast(aD) && !isToday(aD) && isToday(bD)) return -1;
+      if (isToday(aD) && isPast(bD) && !isToday(bD)) return 1;
+      return aD.getTime() - bD.getTime();
+    });
+  }, [allCards]);
+
+  const overdueCount = urgentCards.filter(c => {
+    const d = parseISO(c.dueDate!);
+    return isPast(d) && !isToday(d);
+  }).length;
+  const dueTodayCount = urgentCards.filter(c => isToday(parseISO(c.dueDate!))).length;
+  const totalUrgent = urgentCards.length;
+
+  // ── Team form handlers ──────────────────────────────────────────────────────
   const handleNameChange = (val: string) => {
     setTeamName(val);
-    if (!slugEdited) {
-      setTeamSlug(slugify(val));
-    }
+    if (!slugEdited) setTeamSlug(slugify(val));
   };
 
   const handleSlugChange = (val: string) => {
@@ -74,7 +108,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       toast({ title: "Name and slug are required", variant: "destructive" });
       return;
     }
-    // Check slug uniqueness client-side
     if (teams?.some(t => t.slug === teamSlug)) {
       toast({ title: "Slug already taken — try a different one", variant: "destructive" });
       return;
@@ -96,6 +129,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const pageTitle = location === "/" ? "Dashboard"
+    : location === "/calendar" ? "Calendar"
+      : location === "/projects" ? "Projects"
+        : location === "/labels" ? "Labels"
+          : location === "/settings" ? "Settings"
+            : location.startsWith("/board/") ? `${location.split("/")[2]?.toUpperCase()} Board`
+              : location.startsWith("/gantt/") ? "Gantt"
+                : "Atlas";
+
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-background">
@@ -109,7 +151,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </SidebarHeader>
 
-          <SidebarContent className="bg-sidebar">
+          <SidebarContent className="bg-sidebar flex flex-col h-full">
             {/* Overview nav */}
             <SidebarGroup>
               <SidebarGroupLabel className="text-sidebar-foreground/60 uppercase text-xs tracking-wider">
@@ -122,6 +164,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       <Link href="/" className="text-sidebar-foreground hover:bg-sidebar-accent flex items-center gap-2">
                         <LayoutDashboard className="w-4 h-4" />
                         <span>Dashboard</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/projects"}>
+                      <Link href="/projects" className="text-sidebar-foreground hover:bg-sidebar-accent flex items-center gap-2">
+                        <Layers className="w-4 h-4" />
+                        <span>Projects</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -188,6 +238,101 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
+
+            {/* Spacer to push alerts to bottom */}
+            <div className="flex-1" />
+
+            {/* ── Alerts / Activity Feed ────────────────────────────────────── */}
+            <SidebarGroup className="border-t border-sidebar-border pt-2 pb-2 mt-2">
+              <button
+                onClick={() => setAlertsOpen(o => !o)}
+                className={cn(
+                  "w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                  alertsOpen
+                    ? "bg-sidebar-accent text-sidebar-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                )}
+                aria-expanded={alertsOpen}
+              >
+                {totalUrgent > 0
+                  ? <Bell className="w-4 h-4 shrink-0 text-destructive" />
+                  : <BellOff className="w-4 h-4 shrink-0 text-muted-foreground" />
+                }
+                <span className="flex-1 text-left">Alerts</span>
+                {totalUrgent > 0 && (
+                  <Badge className="h-5 min-w-5 px-1.5 text-[10px] bg-destructive text-white border-none">
+                    {totalUrgent}
+                  </Badge>
+                )}
+                {alertsOpen
+                  ? <ChevronDown className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                  : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                }
+              </button>
+
+              {alertsOpen && (
+                <div className="mt-1 mx-1 rounded-lg border bg-sidebar-accent/40 overflow-hidden">
+                  {totalUrgent === 0 ? (
+                    <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                      ✓ No overdue or due-today cards
+                    </div>
+                  ) : (
+                    <>
+                      {/* Summary line */}
+                      <div className="px-3 py-2 flex gap-3 border-b bg-muted/30 text-xs">
+                        {overdueCount > 0 && (
+                          <span className="flex items-center gap-1 text-destructive font-medium">
+                            <AlertCircle className="w-3 h-3" /> {overdueCount} overdue
+                          </span>
+                        )}
+                        {dueTodayCount > 0 && (
+                          <span className="flex items-center gap-1 text-amber-600 font-medium">
+                            <Clock className="w-3 h-3" /> {dueTodayCount} due today
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Card list */}
+                      <ScrollArea className="max-h-64">
+                        <div className="py-1">
+                          {urgentCards.map(card => {
+                            const d = parseISO(card.dueDate!);
+                            const isOverdue = isPast(d) && !isToday(d);
+                            const dueToday = isToday(d);
+                            return (
+                              <button
+                                key={card.id}
+                                className="w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-sidebar-accent transition-colors group"
+                                onClick={() => { setSelectedCardId(card.id); setAlertsOpen(false); }}
+                              >
+                                <div className={cn(
+                                  "w-1.5 h-1.5 rounded-full shrink-0 mt-1.5",
+                                  isOverdue ? "bg-destructive" : "bg-amber-500"
+                                )} />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-medium truncate text-sidebar-foreground group-hover:text-primary transition-colors">
+                                    {card.title}
+                                  </p>
+                                  <p className={cn(
+                                    "text-[10px] mt-0.5 font-medium",
+                                    isOverdue ? "text-destructive" : "text-amber-600"
+                                  )}>
+                                    {isOverdue
+                                      ? `Overdue · ${format(d, "MMM d")}`
+                                      : "Due today"
+                                    }
+                                  </p>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </ScrollArea>
+                    </>
+                  )}
+                </div>
+              )}
+            </SidebarGroup>
           </SidebarContent>
         </Sidebar>
 
@@ -197,18 +342,22 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-2">
               <SidebarTrigger />
               <div className="h-4 w-px bg-border mx-2" />
-              <h2 className="text-sm font-medium text-muted-foreground capitalize">
-                {location === "/" ? "Dashboard"
-                  : location === "/calendar" ? "Calendar"
-                    : location === "/labels" ? "Labels"
-                      : location === "/settings" ? "Settings"
-                        : location.startsWith("/board/") ? `${location.split("/")[2]?.toUpperCase()} Board`
-                          : location.startsWith("/gantt/") ? "Gantt"
-                            : "Atlas"}
-              </h2>
+              <h2 className="text-sm font-medium text-muted-foreground">{pageTitle}</h2>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              {/* Compact alert badge in header (visible when sidebar is collapsed) */}
+              {totalUrgent > 0 && (
+                <button
+                  className="flex items-center gap-1.5 text-sm text-destructive hover:bg-destructive/10 px-2 py-1.5 rounded-md transition-colors"
+                  onClick={() => setAlertsOpen(o => !o)}
+                  title={`${totalUrgent} urgent card${totalUrgent !== 1 ? "s" : ""}`}
+                >
+                  <Bell className="w-4 h-4" />
+                  <span className="font-semibold text-xs">{totalUrgent}</span>
+                </button>
+              )}
+
               <DropdownMenu>
                 <DropdownMenuTrigger className="flex items-center gap-2 text-sm font-medium outline-none hover:bg-accent px-2 py-1.5 rounded-md transition-colors">
                   <UserCircle className="w-5 h-5 text-muted-foreground" />
@@ -241,7 +390,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {/* Add New Team Dialog */}
+      {/* ── Add New Team Dialog ──────────────────────────────────────────────── */}
       <Dialog open={showNewTeam} onOpenChange={open => { setShowNewTeam(open); if (!open) resetDialog(); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -298,10 +447,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     aria-label={`Color ${c}`}
                   />
                 ))}
-              </div>
-              <div className="flex items-center gap-2 mt-1">
-                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: teamColor }} />
-                <span className="text-xs text-muted-foreground">Preview with selected color</span>
               </div>
             </div>
 
