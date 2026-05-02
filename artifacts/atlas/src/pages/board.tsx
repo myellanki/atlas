@@ -14,7 +14,8 @@ import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Plus, MoreHorizontal, MessageSquare, CheckSquare, Link as LinkIcon,
-  BarChart, Bot, CalendarClock, ChartGantt, ArrowRightLeft, ExternalLink
+  BarChart, Bot, CalendarClock, ChartGantt, ArrowRightLeft, ExternalLink,
+  ChevronDown, ChevronUp, Sparkles, Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,12 +56,49 @@ export default function Board() {
   const { toast } = useToast();
   const [activeGanttMember, setActiveGanttMember] = useState<{ id: number; name: string } | null>(null);
 
+  // ── Per-card expand state ──────────────────────────────────────────────────
+  const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
+  const [cardAiSummaries, setCardAiSummaries] = useState<Record<number, string>>({});
+  const [aiLoadingCard, setAiLoadingCard] = useState<number | null>(null);
+
+  const toggleCardExpand = useCallback((cardId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedCards(prev => {
+      const next = new Set(prev);
+      next.has(cardId) ? next.delete(cardId) : next.add(cardId);
+      return next;
+    });
+  }, []);
+
+  const fetchCardAiSummary = useCallback(async (cardId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (aiLoadingCard !== null) return;
+    setAiLoadingCard(cardId);
+    try {
+      const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+      const res = await fetch(`${base}/api/ai/card-summary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.summary) {
+          setCardAiSummaries(prev => ({ ...prev, [cardId]: data.summary }));
+        }
+      }
+    } catch {
+      // silent
+    } finally {
+      setAiLoadingCard(null);
+    }
+  }, [aiLoadingCard]);
+
   // Find team by slug
   const { data: teams } = useListTeams();
   const team = useMemo(() => teams?.find(t => t.slug === teamSlug), [teams, teamSlug]);
   const teamId = team?.id;
 
-  // Load members and cards for current team
   const { data: members, isLoading: loadingMembers } = useListMembers(
     { teamId },
     { query: { enabled: !!teamId } }
@@ -76,7 +114,6 @@ export default function Board() {
   // ── Drag-and-drop ──────────────────────────────────────────────────────────
   const handleDragEnd = useCallback((result: DropResult) => {
     if (!result.destination || !teamId) return;
-
     const { source, destination } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
@@ -85,38 +122,25 @@ export default function Board() {
       ? null
       : parseInt(destination.droppableId);
 
-    // Optimistic update: change assignee + reorder positions in that column
     queryClient.setQueryData(getListCardsQueryKey({ teamId }), (old: any[]) => {
       if (!old) return old;
-
-      // Remove card from old column, insert into new column at correct index
       const others = old.filter(c => c.id !== cardId);
       const moved = old.find(c => c.id === cardId);
       if (!moved) return old;
-
       const updatedMoved = { ...moved, assigneeId: newAssigneeId, position: destination.index };
-
-      // Re-calculate positions for destination column
       const destColCards = others
         .filter(c => c.assigneeId === newAssigneeId)
         .sort((a, b) => a.position - b.position);
-
       destColCards.splice(destination.index, 0, updatedMoved);
-
       const destUpdated = destColCards.map((c, i) => ({ ...c, position: i }));
-
-      // For source column, re-normalize positions too
       const srcAssigneeId = source.droppableId === "unassigned" ? null : parseInt(source.droppableId);
       const srcColCards = others
         .filter(c => c.assigneeId === srcAssigneeId && c.assigneeId !== newAssigneeId)
         .sort((a, b) => a.position - b.position)
         .map((c, i) => ({ ...c, position: i }));
-
-      // Cards that are in neither source nor dest column
       const untouched = others.filter(c =>
         c.assigneeId !== newAssigneeId && c.assigneeId !== srcAssigneeId
       );
-
       return [...untouched, ...srcColCards, ...destUpdated];
     });
 
@@ -124,7 +148,6 @@ export default function Board() {
       { cardId, data: { teamId, assigneeId: newAssigneeId, position: destination.index } },
       {
         onError: () => {
-          // Revert on failure
           queryClient.invalidateQueries({ queryKey: getListCardsQueryKey({ teamId }) });
           toast({ title: "Failed to move card", variant: "destructive" });
         },
@@ -173,7 +196,6 @@ export default function Board() {
     ];
   }, [members, cards]);
 
-  // Other teams for cross-team move
   const otherTeams = useMemo(() => teams?.filter(t => t.id !== teamId) ?? [], [teams, teamId]);
 
   if (!teamSlug) return null;
@@ -271,142 +293,193 @@ export default function Board() {
                           snapshot.isDraggingOver && "bg-muted/50"
                         )}
                       >
-                        {col.cards.map((card, index) => (
-                          <Draggable key={card.id.toString()} draggableId={card.id.toString()} index={index}>
-                            {(provided, snapshot) => (
-                              <div
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                                style={provided.draggableProps.style}
-                              >
-                                <CardUI className={cn(
-                                  "hover:border-primary/50 transition-colors shadow-sm cursor-grab active:cursor-grabbing",
-                                  snapshot.isDragging && "shadow-xl border-primary rotate-1"
-                                )}>
-                                  {/* Drag handle — entire card header area */}
-                                  <CardHeader className="p-3 pb-0 space-y-2" {...provided.dragHandleProps}>
-                                    <div className="flex justify-between items-start">
-                                      <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
-                                        <Badge
-                                          variant="secondary"
-                                          className={cn("text-[10px] uppercase font-semibold border-none px-1.5", statusColors[card.status as keyof typeof statusColors])}
-                                        >
-                                          {card.status.replace("_", " ")}
-                                        </Badge>
-                                        {card.labels.map(l => (
-                                          <div
-                                            key={l.id}
-                                            className="px-1.5 py-0.5 rounded text-[10px] font-medium text-white flex items-center gap-1 shadow-sm"
-                                            style={{ backgroundColor: l.color }}
+                        {col.cards.map((card, index) => {
+                          const isExpanded = expandedCards.has(card.id);
+                          const aiSummary = cardAiSummaries[card.id];
+                          const isLoadingAi = aiLoadingCard === card.id;
+
+                          return (
+                            <Draggable key={card.id.toString()} draggableId={card.id.toString()} index={index}>
+                              {(provided, snapshot) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  style={provided.draggableProps.style}
+                                >
+                                  <CardUI className={cn(
+                                    "hover:border-primary/50 transition-colors shadow-sm cursor-grab active:cursor-grabbing group",
+                                    snapshot.isDragging && "shadow-xl border-primary rotate-1"
+                                  )}>
+                                    {/* Drag handle — card header area */}
+                                    <CardHeader className="p-3 pb-0 space-y-2" {...provided.dragHandleProps}>
+                                      <div className="flex justify-between items-start">
+                                        <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
+                                          <Badge
+                                            variant="secondary"
+                                            className={cn("text-[10px] uppercase font-semibold border-none px-1.5", statusColors[card.status as keyof typeof statusColors])}
                                           >
-                                            {l.name}
-                                          </div>
-                                        ))}
+                                            {card.status.replace("_", " ")}
+                                          </Badge>
+                                          {card.labels.map(l => (
+                                            <div
+                                              key={l.id}
+                                              className="px-1.5 py-0.5 rounded text-[10px] font-medium text-white flex items-center gap-1 shadow-sm"
+                                              style={{ backgroundColor: l.color }}
+                                            >
+                                              {l.name}
+                                            </div>
+                                          ))}
+                                        </div>
+                                        <div className="flex items-center gap-1 shrink-0 ml-1">
+                                          <div
+                                            className={cn("w-2.5 h-2.5 rounded-full shadow-sm", priorityColors[card.priority as keyof typeof priorityColors])}
+                                            title={`Priority: ${card.priority}`}
+                                          />
+                                          <DropdownMenu>
+                                            <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
+                                              <button className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-muted transition-opacity w-5 h-5 flex items-center justify-center">
+                                                <MoreHorizontal className="w-3 h-3" />
+                                              </button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end" className="w-48" onClick={e => e.stopPropagation()}>
+                                              <DropdownMenuItem onClick={() => setSelectedCardId(card.id)}>
+                                                <ExternalLink className="w-3.5 h-3.5 mr-2" /> Open card
+                                              </DropdownMenuItem>
+                                              {role === "admin" && otherTeams.length > 0 && (
+                                                <>
+                                                  <DropdownMenuSeparator />
+                                                  <DropdownMenuSub>
+                                                    <DropdownMenuSubTrigger>
+                                                      <ArrowRightLeft className="w-3.5 h-3.5 mr-2" /> Move to team
+                                                    </DropdownMenuSubTrigger>
+                                                    <DropdownMenuSubContent>
+                                                      {otherTeams.map(t => (
+                                                        <DropdownMenuItem
+                                                          key={t.id}
+                                                          onClick={() => handleMoveToTeam(card.id, t.id)}
+                                                        >
+                                                          <div className="w-2.5 h-2.5 rounded-full mr-2" style={{ backgroundColor: t.color }} />
+                                                          {t.name}
+                                                        </DropdownMenuItem>
+                                                      ))}
+                                                    </DropdownMenuSubContent>
+                                                  </DropdownMenuSub>
+                                                </>
+                                              )}
+                                            </DropdownMenuContent>
+                                          </DropdownMenu>
+                                        </div>
                                       </div>
-                                      <div className="flex items-center gap-1 shrink-0 ml-1">
-                                        <div
-                                          className={cn("w-2.5 h-2.5 rounded-full shadow-sm", priorityColors[card.priority as keyof typeof priorityColors])}
-                                          title={`Priority: ${card.priority}`}
-                                        />
-                                        {/* Card context menu */}
-                                        <DropdownMenu>
-                                          <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
-                                            <button className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-muted transition-opacity w-5 h-5 flex items-center justify-center">
-                                              <MoreHorizontal className="w-3 h-3" />
-                                            </button>
-                                          </DropdownMenuTrigger>
-                                          <DropdownMenuContent align="end" className="w-48" onClick={e => e.stopPropagation()}>
-                                            <DropdownMenuItem onClick={() => setSelectedCardId(card.id)}>
-                                              <ExternalLink className="w-3.5 h-3.5 mr-2" /> Open card
-                                            </DropdownMenuItem>
-                                            {role === "admin" && otherTeams.length > 0 && (
-                                              <>
-                                                <DropdownMenuSeparator />
-                                                <DropdownMenuSub>
-                                                  <DropdownMenuSubTrigger>
-                                                    <ArrowRightLeft className="w-3.5 h-3.5 mr-2" /> Move to team
-                                                  </DropdownMenuSubTrigger>
-                                                  <DropdownMenuSubContent>
-                                                    {otherTeams.map(t => (
-                                                      <DropdownMenuItem
-                                                        key={t.id}
-                                                        onClick={() => handleMoveToTeam(card.id, t.id)}
-                                                      >
-                                                        <div className="w-2.5 h-2.5 rounded-full mr-2" style={{ backgroundColor: t.color }} />
-                                                        {t.name}
-                                                      </DropdownMenuItem>
-                                                    ))}
-                                                  </DropdownMenuSubContent>
-                                                </DropdownMenuSub>
-                                              </>
-                                            )}
-                                          </DropdownMenuContent>
-                                        </DropdownMenu>
-                                      </div>
-                                    </div>
-                                    <h3
-                                      className="font-medium text-sm leading-tight line-clamp-2 cursor-pointer hover:text-primary transition-colors"
+                                      <h3
+                                        className="font-medium text-sm leading-tight line-clamp-2 cursor-pointer hover:text-primary transition-colors"
+                                        onClick={() => setSelectedCardId(card.id)}
+                                      >
+                                        {card.title}
+                                      </h3>
+                                    </CardHeader>
+
+                                    {/* Card body — notes + optional AI summary */}
+                                    <CardContent
+                                      className="p-3 pt-2 pb-1 cursor-pointer"
                                       onClick={() => setSelectedCardId(card.id)}
                                     >
-                                      {card.title}
-                                    </h3>
-                                  </CardHeader>
-
-                                  <CardContent
-                                    className="p-3 pt-2 pb-2 cursor-pointer"
-                                    onClick={() => setSelectedCardId(card.id)}
-                                  >
-                                    {card.latestNote && (
-                                      <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded-md line-clamp-2 border border-border/50">
-                                        {card.latestNote}
-                                      </div>
-                                    )}
-                                  </CardContent>
-
-                                  <CardFooter
-                                    className="p-3 pt-0 flex justify-between items-center text-xs text-muted-foreground cursor-pointer"
-                                    onClick={() => setSelectedCardId(card.id)}
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      {card.dueDate && (
+                                      {card.latestNote && (
                                         <div className={cn(
-                                          "flex items-center gap-1",
-                                          new Date(card.dueDate) < new Date() && card.status !== "done" && "text-destructive font-medium"
+                                          "text-xs text-muted-foreground bg-muted/50 p-2 rounded-md border border-border/50",
+                                          !isExpanded && "line-clamp-2"
                                         )}>
-                                          <CalendarClock className="w-3.5 h-3.5" />
-                                          {format(new Date(card.dueDate), "MMM d")}
+                                          {card.latestNote}
                                         </div>
                                       )}
-                                      <div className="flex items-center gap-3">
-                                        {card.checklistTotal > 0 && (
-                                          <div className={cn("flex items-center gap-1", card.checklistDone === card.checklistTotal && "text-green-600")}>
-                                            <CheckSquare className="w-3.5 h-3.5" />
-                                            <span>{card.checklistDone}/{card.checklistTotal}</span>
-                                          </div>
-                                        )}
-                                        {card.commentCount > 0 && (
-                                          <div className="flex items-center gap-1">
-                                            <MessageSquare className="w-3.5 h-3.5" />
-                                            <span>{card.commentCount}</span>
-                                          </div>
-                                        )}
-                                        {card.links && card.links.length > 0 && (
-                                          <div className="flex items-center gap-1">
-                                            <LinkIcon className="w-3.5 h-3.5" />
-                                          </div>
-                                        )}
+
+                                      {/* AI summary — only when expanded */}
+                                      {isExpanded && (
+                                        <div className="mt-2" onClick={e => e.stopPropagation()}>
+                                          {isLoadingAi ? (
+                                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                              <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                                              Generating summary…
+                                            </div>
+                                          ) : aiSummary ? (
+                                            <p className="text-xs text-foreground/80 flex items-start gap-1 bg-primary/5 border border-primary/15 rounded-md p-2">
+                                              <Sparkles className="w-3 h-3 text-primary shrink-0 mt-0.5" />
+                                              {aiSummary}
+                                            </p>
+                                          ) : (
+                                            <button
+                                              className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-primary transition-colors px-2 py-1 rounded-md hover:bg-primary/5 w-full"
+                                              onClick={e => fetchCardAiSummary(card.id, e)}
+                                              disabled={aiLoadingCard !== null}
+                                            >
+                                              <Sparkles className="w-3 h-3 text-primary shrink-0" />
+                                              Generate AI one-liner
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
+                                    </CardContent>
+
+                                    {/* Expand / collapse toggle */}
+                                    {(card.latestNote || isExpanded) && (
+                                      <div className="px-3 pb-1.5 flex justify-end">
+                                        <button
+                                          className="flex items-center gap-1 text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors rounded px-1"
+                                          onClick={e => toggleCardExpand(card.id, e)}
+                                          title={isExpanded ? "Show less" : "Show more + AI"}
+                                        >
+                                          {isExpanded ? (
+                                            <><ChevronUp className="w-3 h-3" /> less</>
+                                          ) : (
+                                            <><ChevronDown className="w-3 h-3" /> more</>
+                                          )}
+                                        </button>
                                       </div>
-                                    </div>
-                                    <span className="text-[10px] uppercase font-mono opacity-50">#{card.id}</span>
-                                  </CardFooter>
-                                </CardUI>
-                              </div>
-                            )}
-                          </Draggable>
-                        ))}
+                                    )}
+
+                                    <CardFooter
+                                      className="p-3 pt-0 flex justify-between items-center text-xs text-muted-foreground cursor-pointer"
+                                      onClick={() => setSelectedCardId(card.id)}
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        {card.dueDate && (
+                                          <div className={cn(
+                                            "flex items-center gap-1",
+                                            new Date(card.dueDate) < new Date() && card.status !== "done" && "text-destructive font-medium"
+                                          )}>
+                                            <CalendarClock className="w-3.5 h-3.5" />
+                                            {format(new Date(card.dueDate), "MMM d")}
+                                          </div>
+                                        )}
+                                        <div className="flex items-center gap-3">
+                                          {card.checklistTotal > 0 && (
+                                            <div className={cn("flex items-center gap-1", card.checklistDone === card.checklistTotal && "text-green-600")}>
+                                              <CheckSquare className="w-3.5 h-3.5" />
+                                              <span>{card.checklistDone}/{card.checklistTotal}</span>
+                                            </div>
+                                          )}
+                                          {card.commentCount > 0 && (
+                                            <div className="flex items-center gap-1">
+                                              <MessageSquare className="w-3.5 h-3.5" />
+                                              <span>{card.commentCount}</span>
+                                            </div>
+                                          )}
+                                          {card.links && card.links.length > 0 && (
+                                            <div className="flex items-center gap-1">
+                                              <LinkIcon className="w-3.5 h-3.5" />
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <span className="text-[10px] uppercase font-mono opacity-50">#{card.id}</span>
+                                    </CardFooter>
+                                  </CardUI>
+                                </div>
+                              )}
+                            </Draggable>
+                          );
+                        })}
                         {provided.placeholder}
 
-                        {/* Add card button at column bottom */}
                         {role === "admin" && (
                           <button
                             className="w-full text-left text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-lg px-2 py-2 flex items-center gap-1.5 transition-colors mt-1"

@@ -11,7 +11,8 @@ import { format, isToday, isPast, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
 import {
   ChevronRight, ChevronDown, ChartGantt, CalendarClock,
-  AlertCircle, Users, Layers, Sparkles, Loader2, RefreshCw
+  AlertCircle, Users, Layers, Sparkles, Loader2, RefreshCw,
+  Download
 } from "lucide-react";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -21,6 +22,10 @@ function fallbackSummary(note: string | null | undefined, dueDate: string | null
     return words.slice(0, 9).join(" ") + (words.length > 9 ? "…" : "");
   }
   return dueDate ? "No updates yet" : "No updates or due date";
+}
+
+function escapeCsv(val: string) {
+  return `"${val.replace(/"/g, '""')}"`;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -42,14 +47,11 @@ export default function ProjectsPage() {
   const { data: allTeams, isLoading: loadingTeams } = useListTeams();
   const { data: allMembers } = useListMembers();
 
-  // Gantt / UI state
   const [openGanttKey, setOpenGanttKey] = useState<string | null>(null);
   const [collapsedTeams, setCollapsedTeams] = useState<Set<number>>(new Set());
   const [filterTeamId, setFilterTeamId] = useState<number | "all">("all");
 
-  // AI summary state — map of cardId → summary string
   const [aiSummaries, setAiSummaries] = useState<Record<number, string>>({});
-  // per-card loading set
   const [loadingIds, setLoadingIds] = useState<Set<number>>(new Set());
   const [generating, setGenerating] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -66,21 +68,17 @@ export default function ProjectsPage() {
     setOpenGanttKey(prev => (prev === key ? null : key));
   };
 
-  // ── AI batch generation ──────────────────────────────────────────────────
+  // ── AI batch generation ───────────────────────────────────────────────────
   const generateSummaries = useCallback(async () => {
     if (!allCards || generating) return;
-
-    // Only generate for cards visible with the current filter
     const targetCards = filterTeamId === "all"
       ? allCards
       : allCards.filter(c => c.teamId === filterTeamId);
-
     if (targetCards.length === 0) return;
 
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-
     const cardIds = targetCards.map(c => c.id);
     setGenerating(true);
     setLoadingIds(new Set(cardIds));
@@ -93,7 +91,6 @@ export default function ProjectsPage() {
         body: JSON.stringify({ cardIds }),
         signal: controller.signal,
       });
-
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
       const reader = resp.body!.getReader();
@@ -106,30 +103,19 @@ export default function ProjectsPage() {
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           const payload = line.slice(6).trim();
           if (payload === "[DONE]") continue;
           try {
-            const parsed = JSON.parse(payload) as { cardId: number; summary?: string; error?: string };
-            if (parsed.summary) {
-              setAiSummaries(prev => ({ ...prev, [parsed.cardId]: parsed.summary! }));
-            }
-            setLoadingIds(prev => {
-              const next = new Set(prev);
-              next.delete(parsed.cardId);
-              return next;
-            });
-          } catch {
-            // ignore parse errors
-          }
+            const parsed = JSON.parse(payload) as { cardId: number; summary?: string };
+            if (parsed.summary) setAiSummaries(prev => ({ ...prev, [parsed.cardId]: parsed.summary! }));
+            setLoadingIds(prev => { const next = new Set(prev); next.delete(parsed.cardId); return next; });
+          } catch { /* ignore */ }
         }
       }
     } catch (err: unknown) {
-      if ((err as Error)?.name !== "AbortError") {
-        console.error("AI batch failed", err);
-      }
+      if ((err as Error)?.name !== "AbortError") console.error("AI batch failed", err);
     } finally {
       setGenerating(false);
       setLoadingIds(new Set());
@@ -143,46 +129,71 @@ export default function ProjectsPage() {
     setGenerating(false);
   };
 
-  // ── Grouped data ─────────────────────────────────────────────────────────
+  // ── Grouped data ──────────────────────────────────────────────────────────
   const grouped = useMemo(() => {
     if (!allCards || !allTeams) return [];
     const teams = filterTeamId === "all" ? allTeams : allTeams.filter(t => t.id === filterTeamId);
-
     return teams.map(team => {
       const teamCards = allCards.filter(c => c.teamId === team.id);
       const analystMap = new Map<number | null, typeof teamCards>();
-
       for (const card of teamCards) {
         const key = card.assigneeId ?? null;
         if (!analystMap.has(key)) analystMap.set(key, []);
         analystMap.get(key)!.push(card);
       }
-
       const analysts = [...analystMap.entries()]
         .map(([memberId, cards]) => {
           const member = memberId !== null ? allMembers?.find(m => m.id === memberId) : undefined;
-          return {
-            memberId,
-            memberName: member?.name ?? "Unassigned",
-            cards: cards.sort((a, b) => a.position - b.position),
-          };
+          return { memberId, memberName: member?.name ?? "Unassigned", cards: cards.sort((a, b) => a.position - b.position) };
         })
         .sort((a, b) => {
           if (a.memberId === null) return 1;
           if (b.memberId === null) return -1;
           return a.memberName.localeCompare(b.memberName);
         });
-
       return { team, analysts, total: teamCards.length };
     });
   }, [allCards, allTeams, allMembers, filterTeamId]);
+
+  // ── CSV export ────────────────────────────────────────────────────────────
+  const exportCsv = useCallback(() => {
+    const header = ["Team", "Analyst", "Project", "Priority", "Quick Summary", "Due Date", "Status"];
+    const rows: string[][] = [header];
+
+    for (const { team, analysts } of grouped) {
+      for (const { memberName, cards } of analysts) {
+        for (const card of cards) {
+          const summary = aiSummaries[card.id] || fallbackSummary(card.latestNote, card.dueDate);
+          rows.push([
+            team.name,
+            memberName,
+            card.title,
+            card.priority,
+            summary,
+            card.dueDate ? format(parseISO(card.dueDate), "MMM d, yyyy") : "",
+            STATUS_CONFIG[card.status]?.label ?? card.status,
+          ]);
+        }
+      }
+    }
+
+    const csv = rows.map(r => r.map(escapeCsv).join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `atlas-projects-${format(new Date(), "yyyy-MM-dd")}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [grouped, aiSummaries]);
 
   const isLoading = loadingCards || loadingTeams;
   const totalCards = allCards?.length ?? 0;
   const overdueCount = allCards?.filter(c =>
     c.dueDate && isPast(parseISO(c.dueDate)) && !isToday(parseISO(c.dueDate)) && c.status !== "done"
   ).length ?? 0;
-
   const aiCount = Object.keys(aiSummaries).length;
   const visibleCardCount = filterTeamId === "all"
     ? (allCards?.length ?? 0)
@@ -200,9 +211,7 @@ export default function ProjectsPage() {
             <p className="text-sm text-muted-foreground mt-1">
               {totalCards} projects across all teams
               {overdueCount > 0 && (
-                <span className="ml-2 text-destructive font-medium">
-                  · {overdueCount} overdue
-                </span>
+                <span className="ml-2 text-destructive font-medium">· {overdueCount} overdue</span>
               )}
             </p>
           </div>
@@ -215,22 +224,17 @@ export default function ProjectsPage() {
                   onClick={() => setFilterTeamId("all")}
                   className={cn(
                     "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-                    filterTeamId === "all"
-                      ? "bg-background shadow-sm text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
+                    filterTeamId === "all" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                   )}
                 >
                   All Teams
                 </button>
                 {allTeams.map(t => (
-                  <button
-                    key={t.id}
+                  <button key={t.id}
                     onClick={() => setFilterTeamId(filterTeamId === t.id ? "all" : t.id)}
                     className={cn(
                       "px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5",
-                      filterTeamId === t.id
-                        ? "bg-background shadow-sm text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
+                      filterTeamId === t.id ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
                     <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
@@ -240,8 +244,22 @@ export default function ProjectsPage() {
               </div>
             )}
 
-            {/* AI generate / refresh / clear buttons */}
+            {/* Action buttons */}
             <div className="flex items-center gap-2">
+              {/* Export CSV */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportCsv}
+                disabled={isLoading || grouped.length === 0}
+                className="gap-1.5"
+                title="Download as CSV spreadsheet"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export CSV
+              </Button>
+
+              {/* Clear AI */}
               {aiCount > 0 && (
                 <Button
                   variant="ghost"
@@ -249,12 +267,13 @@ export default function ProjectsPage() {
                   onClick={clearSummaries}
                   disabled={generating}
                   className="text-muted-foreground hover:text-foreground gap-1.5"
-                  title="Clear AI summaries and revert to note snippets"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
                   Clear
                 </Button>
               )}
+
+              {/* Generate AI Summaries */}
               <Button
                 size="sm"
                 onClick={generateSummaries}
@@ -277,12 +296,10 @@ export default function ProjectsPage() {
           </div>
         </div>
 
-        {/* AI status bar */}
         {aiCount > 0 && !generating && (
           <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1.5">
             <Sparkles className="w-3 h-3 text-primary" />
-            AI summaries generated for {aiCount} of {visibleCardCount} projects
-            {aiCount < visibleCardCount && " — some cards had no content to summarize"}
+            AI summaries active for {aiCount} of {visibleCardCount} projects — exported CSV will include AI text
           </p>
         )}
       </div>
@@ -303,7 +320,6 @@ export default function ProjectsPage() {
               const isCollapsed = collapsedTeams.has(team.id);
               return (
                 <div key={team.id} className="rounded-xl border bg-card overflow-hidden shadow-sm">
-                  {/* Team header */}
                   <button
                     className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-muted/40 transition-colors text-left border-b"
                     onClick={() => toggleTeam(team.id)}
@@ -323,7 +339,6 @@ export default function ProjectsPage() {
 
                   {!isCollapsed && (
                     <div>
-                      {/* Table column headers */}
                       <div className="grid grid-cols-[minmax(200px,1.4fr)_minmax(110px,0.65fr)_minmax(200px,2fr)_minmax(105px,0.6fr)_minmax(110px,0.65fr)] gap-x-4 px-5 py-2 text-[11px] uppercase tracking-wider font-semibold text-muted-foreground border-b bg-muted/20">
                         <span>Project</span>
                         <span>Analyst</span>
@@ -338,10 +353,8 @@ export default function ProjectsPage() {
                       {analysts.map(({ memberId, memberName, cards }) => {
                         const ganttKey = `${team.id}-${memberId}`;
                         const isGanttOpen = openGanttKey === ganttKey;
-
                         return (
                           <React.Fragment key={memberId ?? "unassigned"}>
-                            {/* Analyst sub-header → toggle Gantt */}
                             {memberId !== null && (
                               <button
                                 className={cn(
@@ -349,7 +362,7 @@ export default function ProjectsPage() {
                                   isGanttOpen ? "bg-primary/5 text-primary border-primary/20" : "text-muted-foreground"
                                 )}
                                 onClick={() => toggleGantt(team.id, memberId)}
-                                title={`${isGanttOpen ? "Hide" : "Show"} Gantt chart for ${memberName}`}
+                                title={`${isGanttOpen ? "Hide" : "Show"} Gantt for ${memberName}`}
                               >
                                 <Users className={cn("w-3.5 h-3.5 shrink-0", isGanttOpen ? "text-primary" : "text-muted-foreground/60")} />
                                 <span className={isGanttOpen ? "text-primary" : ""}>{memberName}</span>
@@ -364,15 +377,9 @@ export default function ProjectsPage() {
                               </button>
                             )}
 
-                            {/* Card rows */}
-                            {cards.map((card) => {
-                              const isOverdue = card.dueDate &&
-                                isPast(parseISO(card.dueDate)) &&
-                                !isToday(parseISO(card.dueDate)) &&
-                                card.status !== "done";
-                              const isDueToday = card.dueDate &&
-                                isToday(parseISO(card.dueDate)) &&
-                                card.status !== "done";
+                            {cards.map(card => {
+                              const isOverdue = card.dueDate && isPast(parseISO(card.dueDate)) && !isToday(parseISO(card.dueDate)) && card.status !== "done";
+                              const isDueToday = card.dueDate && isToday(parseISO(card.dueDate)) && card.status !== "done";
                               const statusCfg = STATUS_CONFIG[card.status] ?? STATUS_CONFIG.not_started;
                               const aiSummary = aiSummaries[card.id];
                               const isLoadingThis = loadingIds.has(card.id);
@@ -387,18 +394,11 @@ export default function ProjectsPage() {
                                   )}
                                   onClick={() => setSelectedCardId(card.id)}
                                 >
-                                  {/* Project name */}
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <div
-                                      className={cn("w-2 h-2 rounded-full shrink-0", PRIORITY_DOT[card.priority] ?? "bg-muted-foreground")}
-                                      title={`${card.priority} priority`}
-                                    />
-                                    <span className="text-sm font-medium truncate group-hover:text-primary transition-colors">
-                                      {card.title}
-                                    </span>
+                                    <div className={cn("w-2 h-2 rounded-full shrink-0", PRIORITY_DOT[card.priority] ?? "bg-muted-foreground")} title={`${card.priority} priority`} />
+                                    <span className="text-sm font-medium truncate group-hover:text-primary transition-colors">{card.title}</span>
                                   </div>
 
-                                  {/* Analyst */}
                                   <div className="text-sm text-muted-foreground truncate">
                                     {memberId === null
                                       ? <span className="text-muted-foreground/50 italic text-xs">Unassigned</span>
@@ -406,7 +406,6 @@ export default function ProjectsPage() {
                                     }
                                   </div>
 
-                                  {/* Quick summary (AI or fallback) */}
                                   <div className="min-w-0">
                                     {isLoadingThis ? (
                                       <div className="flex items-center gap-1.5">
@@ -414,24 +413,17 @@ export default function ProjectsPage() {
                                         <div className="h-3 bg-primary/10 rounded animate-pulse flex-1 max-w-[140px]" />
                                       </div>
                                     ) : aiSummary ? (
-                                      <p
-                                        className="text-xs text-foreground/80 truncate leading-snug"
-                                        title={aiSummary}
-                                      >
+                                      <p className="text-xs text-foreground/80 truncate leading-snug" title={aiSummary}>
                                         <Sparkles className="w-2.5 h-2.5 text-primary inline mr-1 shrink-0" />
                                         {aiSummary}
                                       </p>
                                     ) : (
-                                      <p
-                                        className="text-xs text-muted-foreground truncate leading-snug"
-                                        title={card.latestNote ?? undefined}
-                                      >
+                                      <p className="text-xs text-muted-foreground truncate leading-snug" title={card.latestNote ?? undefined}>
                                         {fallbackSummary(card.latestNote, card.dueDate)}
                                       </p>
                                     )}
                                   </div>
 
-                                  {/* Due date */}
                                   <div>
                                     {card.dueDate ? (
                                       <span className={cn(
@@ -450,7 +442,6 @@ export default function ProjectsPage() {
                                     )}
                                   </div>
 
-                                  {/* Status */}
                                   <div>
                                     <span className={cn(
                                       "inline-block text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full",
@@ -463,7 +454,6 @@ export default function ProjectsPage() {
                               );
                             })}
 
-                            {/* Gantt panel (full-width) */}
                             {isGanttOpen && memberId !== null && (
                               <div className="border-b bg-muted/20 px-5 py-4">
                                 <AnalystGanttPanel
