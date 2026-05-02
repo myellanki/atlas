@@ -1,17 +1,25 @@
-import React from "react";
+import React, { useState } from "react";
 import { useGetDashboardSummary, useGetTeamSummaries, useGetRecentActivity } from "@workspace/api-client-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
-import { Activity, AlertCircle, CheckCircle2, Clock, Layers, Users, Kanban, Columns } from "lucide-react";
+import { Activity, AlertCircle, CheckCircle2, Clock, Layers, Users, Kanban, Columns, ChevronRight, ChevronDown } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import AnalystGanttPanel from "@/components/analyst-gantt-panel";
 
 export default function Dashboard() {
   const { data: summary, isLoading: loadingSummary } = useGetDashboardSummary();
   const { data: teams, isLoading: loadingTeams } = useGetTeamSummaries();
   const { data: activity, isLoading: loadingActivity } = useGetRecentActivity({ limit: 10 });
+  // key = `${teamId}-${memberId}`
+  const [openGanttKey, setOpenGanttKey] = useState<string | null>(null);
+
+  const toggleGantt = (teamId: number, memberId: number) => {
+    const key = `${teamId}-${memberId}`;
+    setOpenGanttKey(prev => (prev === key ? null : key));
+  };
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8">
@@ -130,27 +138,58 @@ export default function Dashboard() {
                 <CardContent className="pt-0">
                   <Table>
                     <TableBody>
-                      {team.members.map(member => (
-                        <TableRow key={member.memberId}>
-                          <TableCell className="w-[200px] font-medium">{member.memberName}</TableCell>
-                          <TableCell>
-                            {member.aiSummary ? (
-                              <span className="text-sm text-muted-foreground">{member.aiSummary}</span>
-                            ) : (
-                              <span className="text-sm italic text-muted-foreground/50">No recent notes</span>
+                      {team.members.map(member => {
+                        const ganttKey = `${team.teamId}-${member.memberId}`;
+                        const isOpen = openGanttKey === ganttKey;
+                        return (
+                          <React.Fragment key={member.memberId}>
+                            <TableRow
+                              className="group cursor-pointer hover:bg-muted/40 transition-colors"
+                              onClick={() => toggleGantt(team.teamId, member.memberId)}
+                              aria-expanded={isOpen}
+                              role="button"
+                            >
+                              <TableCell className="w-[200px]">
+                                <div className="flex items-center gap-2 font-medium">
+                                  {isOpen
+                                    ? <ChevronDown className="w-4 h-4 text-primary shrink-0" />
+                                    : <ChevronRight className="w-4 h-4 text-muted-foreground/50 group-hover:text-muted-foreground shrink-0 transition-colors" />
+                                  }
+                                  <span className={isOpen ? "text-primary" : ""}>{member.memberName}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {member.aiSummary ? (
+                                  <span className="text-sm text-muted-foreground">{member.aiSummary}</span>
+                                ) : (
+                                  <span className="text-sm italic text-muted-foreground/50">No recent notes</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right w-[150px]">
+                                {member.cardCount > 0 ? (
+                                  <Badge variant="outline" className="font-normal">
+                                    {member.done}/{member.cardCount} Done
+                                  </Badge>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">Empty</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                            {isOpen && (
+                              <TableRow>
+                                <TableCell colSpan={3} className="p-3 bg-muted/20">
+                                  <AnalystGanttPanel
+                                    teamId={team.teamId}
+                                    memberId={member.memberId}
+                                    memberName={member.memberName}
+                                    onClose={() => setOpenGanttKey(null)}
+                                  />
+                                </TableCell>
+                              </TableRow>
                             )}
-                          </TableCell>
-                          <TableCell className="text-right w-[150px]">
-                            {member.cardCount > 0 ? (
-                              <Badge variant="outline" className="font-normal">
-                                {member.done}/{member.cardCount} Done
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">Empty</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                          </React.Fragment>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </CardContent>

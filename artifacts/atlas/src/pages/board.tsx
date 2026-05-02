@@ -13,7 +13,7 @@ import {
 } from "@workspace/api-client-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, MoreHorizontal, MessageSquare, CheckSquare, Link as LinkIcon, BarChart, Bot, ExternalLink, CalendarClock } from "lucide-react";
+import { Plus, MoreHorizontal, MessageSquare, CheckSquare, Link as LinkIcon, BarChart, Bot, ExternalLink, CalendarClock, ChartGantt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
@@ -21,6 +21,7 @@ import { Card as CardUI, CardContent, CardFooter, CardHeader } from "@/component
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAppStore } from "@/lib/store";
 import CardDetailDrawer from "@/components/card-detail-drawer";
+import AnalystGanttPanel from "@/components/analyst-gantt-panel";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
@@ -43,7 +44,8 @@ export default function Board() {
   const { teamSlug } = useParams();
   const queryClient = useQueryClient();
   const { role, setSelectedCardId } = useAppStore();
-  
+  const [activeGanttMember, setActiveGanttMember] = useState<{ id: number; name: string } | null>(null);
+
   // Find team by slug
   const { data: teams } = useListTeams();
   const team = useMemo(() => teams?.find(t => t.slug === teamSlug), [teams, teamSlug]);
@@ -158,10 +160,31 @@ export default function Board() {
               ) : columns.map(col => (
                 <div key={col.id} className="w-[340px] shrink-0 flex flex-col bg-muted/30 rounded-xl border p-3 max-h-full">
                   <div className="font-semibold flex items-center justify-between px-1 mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate max-w-[200px]">{col.title}</span>
+                    <button
+                      className={cn(
+                        "flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-muted/60 transition-colors text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                        col.id !== "unassigned" && "cursor-pointer"
+                      )}
+                      onClick={() => {
+                        if (col.id === "unassigned" || !teamId) return;
+                        const memberId = parseInt(col.id);
+                        setActiveGanttMember(
+                          activeGanttMember?.id === memberId ? null : { id: memberId, name: col.title }
+                        );
+                      }}
+                      disabled={col.id === "unassigned" || !teamId}
+                      aria-label={col.id !== "unassigned" ? `Toggle Gantt chart for ${col.title}` : undefined}
+                      aria-expanded={activeGanttMember?.id === parseInt(col.id)}
+                    >
+                      <span className="truncate max-w-[180px]">{col.title}</span>
                       <Badge variant="secondary" className="px-1.5 py-0 text-xs">{col.cards.length}</Badge>
-                    </div>
+                      {col.id !== "unassigned" && (
+                        <ChartGantt className={cn(
+                          "w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-70 transition-opacity",
+                          activeGanttMember?.id === parseInt(col.id) && "opacity-100 text-primary"
+                        )} />
+                      )}
+                    </button>
                     <Button variant="ghost" size="icon" className="h-6 w-6">
                       <MoreHorizontal className="w-4 h-4" />
                     </Button>
@@ -265,6 +288,20 @@ export default function Board() {
           <ScrollBar orientation="horizontal" />
         </ScrollArea>
       </div>
+
+      {/* Analyst Gantt Panel — slides up from bottom when an analyst name is clicked */}
+      {activeGanttMember && teamId && (
+        <div className="border-t shrink-0 bg-background z-20 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+          <div className="p-4">
+            <AnalystGanttPanel
+              teamId={teamId}
+              memberId={activeGanttMember.id}
+              memberName={activeGanttMember.name}
+              onClose={() => setActiveGanttMember(null)}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="border-t bg-card p-4 shrink-0 shadow-[0_-4px_6px_-1px_rgb(0,0,0,0.05)] z-10">
         <div className="flex items-center justify-between mb-3">
