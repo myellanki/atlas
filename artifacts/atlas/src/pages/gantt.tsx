@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { useParams, Link } from "wouter";
 import { useGetTeamGantt, useGetTeam } from "@workspace/api-client-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ZoomIn, ZoomOut } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
