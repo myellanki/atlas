@@ -3,20 +3,43 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Atlas Project Management API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: teams
+    description: Team operations
+  - name: members
+    description: Member operations
+  - name: cards
+    description: Card/task operations
+  - name: labels
+    description: Label operations
+  - name: comments
+    description: Comment operations
+  - name: notes
+    description: Note operations
+  - name: checklist
+    description: Checklist operations
+  - name: links
+    description: Link operations
+  - name: dashboard
+    description: Dashboard aggregates
+  - name: gantt
+    description: Gantt chart data
+  - name: activity
+    description: Activity feed
+  - name: ai
+    description: AI summary operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +47,890 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ── Teams ──────────────────────────────────────────────────────────────────
+  /teams:
+    get:
+      operationId: listTeams
+      tags: [teams]
+      summary: List all teams
+      responses:
+        "200":
+          description: List of teams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Team"
+    post:
+      operationId: createTeam
+      tags: [teams]
+      summary: Create a team
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTeamBody"
+      responses:
+        "201":
+          description: Created team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+
+  /teams/{teamId}:
+    get:
+      operationId: getTeam
+      tags: [teams]
+      summary: Get a team
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Team detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+    put:
+      operationId: updateTeam
+      tags: [teams]
+      summary: Update a team
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTeamBody"
+      responses:
+        "200":
+          description: Updated team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+    delete:
+      operationId: deleteTeam
+      tags: [teams]
+      summary: Delete a team
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Members ────────────────────────────────────────────────────────────────
+  /members:
+    get:
+      operationId: listMembers
+      tags: [members]
+      summary: List members
+      parameters:
+        - name: teamId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Member"
+    post:
+      operationId: createMember
+      tags: [members]
+      summary: Create a member
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMemberBody"
+      responses:
+        "201":
+          description: Created member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+
+  /members/{memberId}:
+    get:
+      operationId: getMember
+      tags: [members]
+      summary: Get a member
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Member detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+    put:
+      operationId: updateMember
+      tags: [members]
+      summary: Update a member
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMemberBody"
+      responses:
+        "200":
+          description: Updated member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+    delete:
+      operationId: deleteMember
+      tags: [members]
+      summary: Delete a member
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Cards ──────────────────────────────────────────────────────────────────
+  /cards:
+    get:
+      operationId: listCards
+      tags: [cards]
+      summary: List cards
+      parameters:
+        - name: teamId
+          in: query
+          schema:
+            type: integer
+        - name: assigneeId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: priority
+          in: query
+          schema:
+            type: string
+        - name: labelId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of cards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Card"
+    post:
+      operationId: createCard
+      tags: [cards]
+      summary: Create a card
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCardBody"
+      responses:
+        "201":
+          description: Created card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Card"
+
+  /cards/{cardId}:
+    get:
+      operationId: getCard
+      tags: [cards]
+      summary: Get a card with full detail
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Card with notes, checklist, comments, links, labels
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardDetail"
+    put:
+      operationId: updateCard
+      tags: [cards]
+      summary: Update a card
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCardBody"
+      responses:
+        "200":
+          description: Updated card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Card"
+    delete:
+      operationId: deleteCard
+      tags: [cards]
+      summary: Delete a card
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /cards/{cardId}/move:
+    post:
+      operationId: moveCard
+      tags: [cards]
+      summary: Move a card to a different assignee/team/position
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveCardBody"
+      responses:
+        "200":
+          description: Moved card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Card"
+
+  /cards/{cardId}/labels:
+    post:
+      operationId: addCardLabel
+      tags: [cards]
+      summary: Add a label to a card
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                labelId:
+                  type: integer
+              required: [labelId]
+      responses:
+        "204":
+          description: Added
+
+  /cards/{cardId}/labels/{labelId}:
+    delete:
+      operationId: removeCardLabel
+      tags: [cards]
+      summary: Remove a label from a card
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: labelId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Removed
+
+  # ── Labels ─────────────────────────────────────────────────────────────────
+  /labels:
+    get:
+      operationId: listLabels
+      tags: [labels]
+      summary: List all labels
+      responses:
+        "200":
+          description: List of labels
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Label"
+    post:
+      operationId: createLabel
+      tags: [labels]
+      summary: Create a label
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLabelBody"
+      responses:
+        "201":
+          description: Created label
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Label"
+
+  /labels/{labelId}:
+    put:
+      operationId: updateLabel
+      tags: [labels]
+      summary: Update a label
+      parameters:
+        - name: labelId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLabelBody"
+      responses:
+        "200":
+          description: Updated label
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Label"
+    delete:
+      operationId: deleteLabel
+      tags: [labels]
+      summary: Delete a label
+      parameters:
+        - name: labelId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Notes ──────────────────────────────────────────────────────────────────
+  /cards/{cardId}/notes:
+    get:
+      operationId: listNotes
+      tags: [notes]
+      summary: List notes for a card
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Notes list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Note"
+    post:
+      operationId: createNote
+      tags: [notes]
+      summary: Add a note to a card
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNoteBody"
+      responses:
+        "201":
+          description: Created note
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Note"
+
+  /notes/{noteId}:
+    put:
+      operationId: updateNote
+      tags: [notes]
+      summary: Update a note
+      parameters:
+        - name: noteId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNoteBody"
+      responses:
+        "200":
+          description: Updated note
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Note"
+    delete:
+      operationId: deleteNote
+      tags: [notes]
+      summary: Delete a note
+      parameters:
+        - name: noteId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Checklist ──────────────────────────────────────────────────────────────
+  /cards/{cardId}/checklist:
+    get:
+      operationId: listChecklistItems
+      tags: [checklist]
+      summary: List checklist items for a card
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Checklist items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChecklistItem"
+    post:
+      operationId: createChecklistItem
+      tags: [checklist]
+      summary: Add checklist item
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateChecklistItemBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChecklistItem"
+
+  /checklist/{itemId}:
+    put:
+      operationId: updateChecklistItem
+      tags: [checklist]
+      summary: Update checklist item
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateChecklistItemBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChecklistItem"
+    delete:
+      operationId: deleteChecklistItem
+      tags: [checklist]
+      summary: Delete checklist item
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Comments ───────────────────────────────────────────────────────────────
+  /cards/{cardId}/comments:
+    get:
+      operationId: listComments
+      tags: [comments]
+      summary: List comments for a card
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Comments list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Comment"
+    post:
+      operationId: createComment
+      tags: [comments]
+      summary: Add a comment
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommentBody"
+      responses:
+        "201":
+          description: Created comment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+
+  /comments/{commentId}:
+    put:
+      operationId: updateComment
+      tags: [comments]
+      summary: Update a comment
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommentBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+    delete:
+      operationId: deleteComment
+      tags: [comments]
+      summary: Delete a comment
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Links ──────────────────────────────────────────────────────────────────
+  /cards/{cardId}/links:
+    get:
+      operationId: listLinks
+      tags: [links]
+      summary: List links for a card
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Links list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Link"
+    post:
+      operationId: createLink
+      tags: [links]
+      summary: Add a link to a card
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLinkBody"
+      responses:
+        "201":
+          description: Created link
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Link"
+
+  /links/{linkId}:
+    delete:
+      operationId: deleteLink
+      tags: [links]
+      summary: Delete a link
+      parameters:
+        - name: linkId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Dashboard ──────────────────────────────────────────────────────────────
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get global KPI summary
+      responses:
+        "200":
+          description: Dashboard KPIs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/team-summaries:
+    get:
+      operationId: getTeamSummaries
+      tags: [dashboard]
+      summary: Get per-team card counts and status breakdowns
+      responses:
+        "200":
+          description: Team summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamSummary"
+
+  /dashboard/recent-activity:
+    get:
+      operationId: getRecentActivity
+      tags: [activity]
+      summary: Get recent activity feed
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Activity events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityEvent"
+
+  # ── Gantt ──────────────────────────────────────────────────────────────────
+  /gantt/{teamId}:
+    get:
+      operationId: getTeamGantt
+      tags: [gantt]
+      summary: Get Gantt data for a team (grouped by analyst/member)
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Gantt data for team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamGanttData"
+
+  /gantt/{teamId}/member/{memberId}:
+    get:
+      operationId: getMemberGantt
+      tags: [gantt]
+      summary: Get Gantt data for a single analyst column
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Gantt data for member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberGanttData"
+
+  # ── AI Summaries ───────────────────────────────────────────────────────────
+  /ai/team-column-summary:
+    post:
+      operationId: generateTeamColumnSummary
+      tags: [ai]
+      summary: Generate AI summaries for each analyst column in a team
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                teamId:
+                  type: integer
+              required: [teamId]
+      responses:
+        "200":
+          description: Per-column AI summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ColumnAiSummary"
+
+  /ai/card-summary:
+    post:
+      operationId: generateCardSummary
+      tags: [ai]
+      summary: Generate AI summary for a single card
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cardId:
+                  type: integer
+              required: [cardId]
+      responses:
+        "200":
+          description: AI summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardAiSummary"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +938,586 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    # ── Teams ─────────────────────────────────────────────────────────────────
+    Team:
+      type: object
+      properties:
+        id:
+          type: integer
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        color:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, slug, name, color, createdAt]
+
+    CreateTeamBody:
+      type: object
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        color:
+          type: string
+      required: [slug, name, color]
+
+    UpdateTeamBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        color:
+          type: string
+
+    # ── Members ───────────────────────────────────────────────────────────────
+    Member:
+      type: object
+      properties:
+        id:
+          type: integer
+        teamId:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [admin, member]
+        avatarColor:
+          type: string
+        position:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, teamId, name, email, role, avatarColor, position, createdAt]
+
+    CreateMemberBody:
+      type: object
+      properties:
+        teamId:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [admin, member]
+        avatarColor:
+          type: string
+        position:
+          type: integer
+      required: [teamId, name, email, role, avatarColor]
+
+    UpdateMemberBody:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [admin, member]
+        avatarColor:
+          type: string
+        teamId:
+          type: integer
+        position:
+          type: integer
+
+    # ── Cards ──────────────────────────────────────────────────────────────────
+    Card:
+      type: object
+      properties:
+        id:
+          type: integer
+        teamId:
+          type: integer
+        assigneeId:
+          type: integer
+          nullable: true
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [not_started, in_progress, blocked, in_review, done]
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        dueDate:
+          type: string
+          format: date
+          nullable: true
+        position:
+          type: integer
+        checklistTotal:
+          type: integer
+        checklistDone:
+          type: integer
+        commentCount:
+          type: integer
+        latestNote:
+          type: string
+          nullable: true
+        labels:
+          type: array
+          items:
+            $ref: "#/components/schemas/Label"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, teamId, title, status, priority, position, checklistTotal, checklistDone, commentCount, labels, createdAt, updatedAt]
+
+    CardDetail:
+      allOf:
+        - $ref: "#/components/schemas/Card"
+        - type: object
+          properties:
+            notes:
+              type: array
+              items:
+                $ref: "#/components/schemas/Note"
+            checklist:
+              type: array
+              items:
+                $ref: "#/components/schemas/ChecklistItem"
+            comments:
+              type: array
+              items:
+                $ref: "#/components/schemas/Comment"
+            links:
+              type: array
+              items:
+                $ref: "#/components/schemas/Link"
+          required: [notes, checklist, comments, links]
+
+    CreateCardBody:
+      type: object
+      properties:
+        teamId:
+          type: integer
+        assigneeId:
+          type: integer
+          nullable: true
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [not_started, in_progress, blocked, in_review, done]
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        dueDate:
+          type: string
+          format: date
+          nullable: true
+        position:
+          type: integer
+      required: [teamId, title, status, priority]
+
+    UpdateCardBody:
+      type: object
+      properties:
+        assigneeId:
+          type: integer
+          nullable: true
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [not_started, in_progress, blocked, in_review, done]
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        dueDate:
+          type: string
+          format: date
+          nullable: true
+        position:
+          type: integer
+
+    MoveCardBody:
+      type: object
+      properties:
+        assigneeId:
+          type: integer
+          nullable: true
+        teamId:
+          type: integer
+        position:
+          type: integer
+      required: [position]
+
+    # ── Labels ─────────────────────────────────────────────────────────────────
+    Label:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        color:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, color, createdAt]
+
+    CreateLabelBody:
+      type: object
+      properties:
+        name:
+          type: string
+        color:
+          type: string
+      required: [name, color]
+
+    # ── Notes ──────────────────────────────────────────────────────────────────
+    Note:
+      type: object
+      properties:
+        id:
+          type: integer
+        cardId:
+          type: integer
+        content:
+          type: string
+        authorName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, cardId, content, authorName, createdAt, updatedAt]
+
+    CreateNoteBody:
+      type: object
+      properties:
+        content:
+          type: string
+        authorName:
+          type: string
+      required: [content, authorName]
+
+    # ── Checklist ──────────────────────────────────────────────────────────────
+    ChecklistItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        cardId:
+          type: integer
+        text:
+          type: string
+        done:
+          type: boolean
+        position:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, cardId, text, done, position, createdAt]
+
+    CreateChecklistItemBody:
+      type: object
+      properties:
+        text:
+          type: string
+        position:
+          type: integer
+      required: [text]
+
+    UpdateChecklistItemBody:
+      type: object
+      properties:
+        text:
+          type: string
+        done:
+          type: boolean
+        position:
+          type: integer
+
+    # ── Comments ───────────────────────────────────────────────────────────────
+    Comment:
+      type: object
+      properties:
+        id:
+          type: integer
+        cardId:
+          type: integer
+        authorName:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, cardId, authorName, content, createdAt, updatedAt]
+
+    CreateCommentBody:
+      type: object
+      properties:
+        authorName:
+          type: string
+        content:
+          type: string
+      required: [authorName, content]
+
+    # ── Links ──────────────────────────────────────────────────────────────────
+    Link:
+      type: object
+      properties:
+        id:
+          type: integer
+        cardId:
+          type: integer
+        title:
+          type: string
+        url:
+          type: string
+        linkedCardId:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, cardId, title, url, createdAt]
+
+    CreateLinkBody:
+      type: object
+      properties:
+        title:
+          type: string
+        url:
+          type: string
+        linkedCardId:
+          type: integer
+          nullable: true
+      required: [title, url]
+
+    # ── Dashboard ──────────────────────────────────────────────────────────────
+    DashboardSummary:
+      type: object
+      properties:
+        totalCards:
+          type: integer
+        inProgress:
+          type: integer
+        blocked:
+          type: integer
+        done:
+          type: integer
+        overdue:
+          type: integer
+        dueThisWeek:
+          type: integer
+        totalTeams:
+          type: integer
+        totalMembers:
+          type: integer
+      required: [totalCards, inProgress, blocked, done, overdue, dueThisWeek, totalTeams, totalMembers]
+
+    TeamSummary:
+      type: object
+      properties:
+        teamId:
+          type: integer
+        teamName:
+          type: string
+        teamSlug:
+          type: string
+        teamColor:
+          type: string
+        totalCards:
+          type: integer
+        notStarted:
+          type: integer
+        inProgress:
+          type: integer
+        blocked:
+          type: integer
+        inReview:
+          type: integer
+        done:
+          type: integer
+        overdue:
+          type: integer
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberColumnSummary"
+      required: [teamId, teamName, teamSlug, teamColor, totalCards, notStarted, inProgress, blocked, inReview, done, overdue, members]
+
+    MemberColumnSummary:
+      type: object
+      properties:
+        memberId:
+          type: integer
+        memberName:
+          type: string
+        cardCount:
+          type: integer
+        done:
+          type: integer
+        overdue:
+          type: integer
+        aiSummary:
+          type: string
+          nullable: true
+      required: [memberId, memberName, cardCount, done, overdue]
+
+    ActivityEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+        eventType:
+          type: string
+        entityType:
+          type: string
+        entityId:
+          type: integer
+        description:
+          type: string
+        actorName:
+          type: string
+        teamId:
+          type: integer
+          nullable: true
+        cardId:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, eventType, entityType, entityId, description, actorName, createdAt]
+
+    # ── Gantt ──────────────────────────────────────────────────────────────────
+    GanttBar:
+      type: object
+      properties:
+        cardId:
+          type: integer
+        title:
+          type: string
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        dueDate:
+          type: string
+          format: date
+          nullable: true
+        status:
+          type: string
+        priority:
+          type: string
+        assigneeId:
+          type: integer
+          nullable: true
+        assigneeName:
+          type: string
+          nullable: true
+      required: [cardId, title, status, priority]
+
+    MemberGanttData:
+      type: object
+      properties:
+        memberId:
+          type: integer
+        memberName:
+          type: string
+        bars:
+          type: array
+          items:
+            $ref: "#/components/schemas/GanttBar"
+      required: [memberId, memberName, bars]
+
+    TeamGanttData:
+      type: object
+      properties:
+        teamId:
+          type: integer
+        teamName:
+          type: string
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberGanttData"
+        allBars:
+          type: array
+          items:
+            $ref: "#/components/schemas/GanttBar"
+      required: [teamId, teamName, members, allBars]
+
+    # ── AI ─────────────────────────────────────────────────────────────────────
+    ColumnAiSummary:
+      type: object
+      properties:
+        memberId:
+          type: integer
+        memberName:
+          type: string
+        summary:
+          type: string
+        upcomingDeadline:
+          type: string
+          nullable: true
+      required: [memberId, memberName, summary]
+
+    CardAiSummary:
+      type: object
+      properties:
+        cardId:
+          type: integer
+        summary:
+          type: string
+      required: [cardId, summary]
