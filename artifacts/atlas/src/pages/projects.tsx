@@ -12,8 +12,17 @@ import { cn } from "@/lib/utils";
 import {
   ChevronRight, ChevronDown, ChartGantt, CalendarClock,
   AlertCircle, Users, Layers, Sparkles, Loader2, RefreshCw,
-  Download
+  Download, Database, Filter,
 } from "lucide-react";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+
+const DATA_SOURCES = ["CDW", "VINCI", "TriNetX", "Cancer Registry", "Survey", "VA Benefits", "External Cohort", "Other"];
+const COHORTS = [
+  "Vietnam Veterans", "Gulf War", "Post-9/11 OEF/OIF", "WWII", "Korea", "General VA",
+  "Bladder Cancer", "Prostate Cancer", "Lung Cancer", "Colorectal Cancer", "Breast Cancer", "Melanoma", "Other",
+];
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 function fallbackSummary(note: string | null | undefined, dueDate: string | null | undefined): string {
@@ -50,6 +59,8 @@ export default function ProjectsPage() {
   const [openGanttKey, setOpenGanttKey] = useState<string | null>(null);
   const [collapsedTeams, setCollapsedTeams] = useState<Set<number>>(new Set());
   const [filterTeamId, setFilterTeamId] = useState<number | "all">("all");
+  const [filterDataSource, setFilterDataSource] = useState<string>("all");
+  const [filterCohort, setFilterCohort] = useState<string>("all");
 
   const [aiSummaries, setAiSummaries] = useState<Record<number, string>>({});
   const [loadingIds, setLoadingIds] = useState<Set<number>>(new Set());
@@ -134,7 +145,14 @@ export default function ProjectsPage() {
     if (!allCards || !allTeams) return [];
     const teams = filterTeamId === "all" ? allTeams : allTeams.filter(t => t.id === filterTeamId);
     return teams.map(team => {
-      const teamCards = allCards.filter(c => c.teamId === team.id);
+      let teamCards = allCards.filter(c => c.teamId === team.id);
+      // data source / cohort filters (fields may not exist on older cards → treat as null)
+      if (filterDataSource !== "all") {
+        teamCards = teamCards.filter(c => (c as any).dataSource === filterDataSource);
+      }
+      if (filterCohort !== "all") {
+        teamCards = teamCards.filter(c => (c as any).cohort === filterCohort);
+      }
       const analystMap = new Map<number | null, typeof teamCards>();
       for (const card of teamCards) {
         const key = card.assigneeId ?? null;
@@ -153,7 +171,9 @@ export default function ProjectsPage() {
         });
       return { team, analysts, total: teamCards.length };
     });
-  }, [allCards, allTeams, allMembers, filterTeamId]);
+  }, [allCards, allTeams, allMembers, filterTeamId, filterDataSource, filterCohort]);
+
+  const hasTagFilters = filterDataSource !== "all" || filterCohort !== "all";
 
   // ── CSV export ────────────────────────────────────────────────────────────
   const exportCsv = useCallback(() => {
@@ -243,6 +263,46 @@ export default function ProjectsPage() {
                 ))}
               </div>
             )}
+
+            {/* Data Source + Cohort filters */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Database className="w-3.5 h-3.5" />
+                <span>Source:</span>
+              </div>
+              <Select value={filterDataSource} onValueChange={setFilterDataSource}>
+                <SelectTrigger className={cn("h-8 text-xs w-32", filterDataSource !== "all" && "border-primary text-primary")}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sources</SelectItem>
+                  {DATA_SOURCES.map(ds => (
+                    <SelectItem key={ds} value={ds}>{ds}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Filter className="w-3.5 h-3.5" />
+                <span>Cohort:</span>
+              </div>
+              <Select value={filterCohort} onValueChange={setFilterCohort}>
+                <SelectTrigger className={cn("h-8 text-xs w-36", filterCohort !== "all" && "border-primary text-primary")}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Cohorts</SelectItem>
+                  {COHORTS.map(c => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {hasTagFilters && (
+                <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground"
+                  onClick={() => { setFilterDataSource("all"); setFilterCohort("all"); }}>
+                  ✕ Clear
+                </Button>
+              )}
+            </div>
 
             {/* Action buttons */}
             <div className="flex items-center gap-2">

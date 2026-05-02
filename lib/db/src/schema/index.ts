@@ -8,3 +8,5 @@ export * from "./comments";
 export * from "./links";
 export * from "./activity";
 export * from "./sprints";
+export * from "./milestones";
+export * from "./deliverables";

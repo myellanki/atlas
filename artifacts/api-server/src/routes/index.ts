@@ -12,6 +12,9 @@ import dashboardRouter from "./dashboard";
 import ganttRouter from "./gantt";
 import aiRouter from "./ai";
 import sprintsRouter from "./sprints";
+import milestonesRouter from "./milestones";
+import deliverablesRouter from "./deliverables";
+import portfolioRouter from "./portfolio";
 
 const router: IRouter = Router();
 
@@ -28,5 +31,8 @@ router.use(dashboardRouter);
 router.use(ganttRouter);
 router.use(aiRouter);
 router.use(sprintsRouter);
+router.use(milestonesRouter);
+router.use(deliverablesRouter);
+router.use(portfolioRouter);
 
 export default router;

@@ -9,7 +9,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard, Tags, Settings, UserCircle,
   Plus, CalendarDays, Layers, Bell, BellOff,
-  AlertCircle, Clock, ChevronDown, ChevronRight, X
+  AlertCircle, Clock, ChevronDown, ChevronRight, X,
+  Flag, ClipboardList, BookOpen, Users, Flame,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem,
@@ -134,9 +135,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       : location === "/projects" ? "Projects"
         : location === "/labels" ? "Labels"
           : location === "/settings" ? "Settings"
-            : location.startsWith("/board/") ? `${location.split("/")[2]?.toUpperCase()} Board`
-              : location.startsWith("/gantt/") ? "Gantt"
-                : "Atlas";
+            : location === "/milestones" ? "Milestones"
+              : location === "/templates" ? "Card Templates"
+                : location === "/portfolio" ? "Portfolio — Utilization"
+                  : location === "/capacity" ? "Capacity Heat Calendar"
+                    : location === "/publications" ? "Publications"
+                      : location.startsWith("/board/") ? `${location.split("/")[2]?.toUpperCase()} Board`
+                        : location.startsWith("/gantt/") ? "Gantt"
+                          : "Atlas";
 
   return (
     <SidebarProvider>
@@ -188,6 +194,57 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       <Link href="/labels" className="text-sidebar-foreground hover:bg-sidebar-accent flex items-center gap-2">
                         <Tags className="w-4 h-4" />
                         <span>Labels</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/milestones"}>
+                      <Link href="/milestones" className="text-sidebar-foreground hover:bg-sidebar-accent flex items-center gap-2">
+                        <Flag className="w-4 h-4" />
+                        <span>Milestones</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/publications"}>
+                      <Link href="/publications" className="text-sidebar-foreground hover:bg-sidebar-accent flex items-center gap-2">
+                        <BookOpen className="w-4 h-4" />
+                        <span>Publications</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/templates"}>
+                      <Link href="/templates" className="text-sidebar-foreground hover:bg-sidebar-accent flex items-center gap-2">
+                        <ClipboardList className="w-4 h-4" />
+                        <span>Card Templates</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            {/* Portfolio section */}
+            <SidebarGroup>
+              <SidebarGroupLabel className="text-sidebar-foreground/60 uppercase text-xs tracking-wider">
+                Portfolio
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/portfolio"}>
+                      <Link href="/portfolio" className="text-sidebar-foreground hover:bg-sidebar-accent flex items-center gap-2">
+                        <Users className="w-4 h-4" />
+                        <span>Utilization</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/capacity"}>
+                      <Link href="/capacity" className="text-sidebar-foreground hover:bg-sidebar-accent flex items-center gap-2">
+                        <Flame className="w-4 h-4" />
+                        <span>Capacity</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

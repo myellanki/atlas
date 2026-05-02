@@ -16,6 +16,8 @@ export const cardsTable = pgTable("cards", {
   startDate: date("start_date"),
   dueDate: date("due_date"),
   position: integer("position").notNull().default(0),
+  dataSource: varchar("data_source", { length: 50 }),
+  cohort: varchar("cohort", { length: 150 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

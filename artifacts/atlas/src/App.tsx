@@ -11,6 +11,11 @@ import Labels from "@/pages/labels";
 import Settings from "@/pages/settings";
 import Calendar from "@/pages/calendar";
 import Projects from "@/pages/projects";
+import Milestones from "@/pages/milestones";
+import Templates from "@/pages/templates";
+import Portfolio from "@/pages/portfolio";
+import Capacity from "@/pages/capacity";
+import Publications from "@/pages/publications";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +29,11 @@ function Router() {
       <Route path="/gantt/:teamId" component={Gantt} />
       <Route path="/labels" component={Labels} />
       <Route path="/settings" component={Settings} />
+      <Route path="/milestones" component={Milestones} />
+      <Route path="/templates" component={Templates} />
+      <Route path="/portfolio" component={Portfolio} />
+      <Route path="/capacity" component={Capacity} />
+      <Route path="/publications" component={Publications} />
       <Route component={NotFound} />
     </Switch>
   );

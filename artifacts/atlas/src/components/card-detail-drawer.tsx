@@ -41,8 +41,34 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
   CalendarIcon, MessageSquare, Plus, CheckSquare, Tags, Trash2, X,
-  Send, AlertCircle, Users, Link2, ExternalLink, ArrowUpRight, Globe, Layers
+  Send, AlertCircle, Users, Link2, ExternalLink, ArrowUpRight, Globe, Layers,
+  BookOpen, Database, Filter as FilterIcon,
 } from "lucide-react";
+
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+const DATA_SOURCES = ["CDW", "VINCI", "TriNetX", "Cancer Registry", "Survey", "VA Benefits", "External Cohort", "Other"];
+const COHORTS = [
+  "Vietnam Veterans", "Gulf War", "Post-9/11 OEF/OIF", "WWII", "Korea", "General VA",
+  "Bladder Cancer", "Prostate Cancer", "Lung Cancer", "Colorectal Cancer", "Breast Cancer", "Melanoma", "Other",
+];
+const DELIVERABLE_TYPES = [
+  { value: "paper",      label: "Journal Paper" },
+  { value: "report",     label: "Report" },
+  { value: "conference", label: "Conference" },
+  { value: "product",    label: "Operational Product" },
+];
+const DELIVERABLE_STATUSES = [
+  { value: "drafting",  label: "Drafting" },
+  { value: "submitted", label: "Submitted" },
+  { value: "accepted",  label: "Accepted" },
+  { value: "published", label: "Published" },
+];
+interface Deliverable {
+  id: number; cardId: number; title: string; type: string;
+  targetDate: string | null; status: string; journal: string | null;
+  firstAuthor: string | null; doi: string | null; url: string | null;
+  notes: string | null; publishedYear: number | null;
+}
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -106,6 +132,22 @@ export default function CardDetailDrawer() {
   const [cardSearch, setCardSearch] = useState("");
   const [linkSaving, setLinkSaving] = useState(false);
 
+  // Deliverables state
+  const [deliverables, setDeliverables] = useState<Deliverable[]>([]);
+  const [loadingDeliverables, setLoadingDeliverables] = useState(false);
+  const [showDeliverableForm, setShowDeliverableForm] = useState(false);
+  const [editingDeliverable, setEditingDeliverable] = useState<Deliverable | null>(null);
+  const [deliverableForm, setDeliverableForm] = useState({
+    title: "", type: "paper", status: "drafting", journal: "", firstAuthor: "",
+    targetDate: "", doi: "", url: "", notes: "", publishedYear: "",
+  });
+  const [savingDeliverable, setSavingDeliverable] = useState(false);
+
+  // Data source / cohort tag state
+  const [tagDataSource, setTagDataSource] = useState<string>("");
+  const [tagCohort, setTagCohort] = useState<string>("");
+  const [savingTags, setSavingTags] = useState(false);
+
   const initializedForId = useRef<number | null>(null);
 
   // ── Sync card data to local state ──────────────────────────────────────────
@@ -131,6 +173,100 @@ export default function CardDetailDrawer() {
       setLinkMode("url");
     }
   }, [showLinkDialog]);
+
+  // Load deliverables + sync tags when card changes
+  useEffect(() => {
+    if (!card || selectedCardId <= 0) {
+      setDeliverables([]);
+      return;
+    }
+    setLoadingDeliverables(true);
+    fetch(`${BASE}/api/cards/${card.id}/deliverables`)
+      .then(r => r.json())
+      .then(data => setDeliverables(Array.isArray(data) ? data : []))
+      .catch(() => setDeliverables([]))
+      .finally(() => setLoadingDeliverables(false));
+    // sync tag state from card (uses 'any' because the generated type doesn't include these fields yet)
+    setTagDataSource((card as any).dataSource ?? "");
+    setTagCohort((card as any).cohort ?? "");
+  }, [card?.id]);
+
+  const handleSaveTags = async () => {
+    if (!card) return;
+    setSavingTags(true);
+    try {
+      await fetch(`${BASE}/api/cards/${card.id}/tags`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dataSource: tagDataSource || null,
+          cohort: tagCohort || null,
+        }),
+      });
+      queryClient.invalidateQueries({ queryKey: getListCardsQueryKey() });
+    } finally {
+      setSavingTags(false);
+    }
+  };
+
+  const openDeliverableCreate = () => {
+    setEditingDeliverable(null);
+    setDeliverableForm({ title: "", type: "paper", status: "drafting", journal: "", firstAuthor: "", targetDate: "", doi: "", url: "", notes: "", publishedYear: "" });
+    setShowDeliverableForm(true);
+  };
+
+  const openDeliverableEdit = (d: Deliverable) => {
+    setEditingDeliverable(d);
+    setDeliverableForm({
+      title: d.title, type: d.type, status: d.status,
+      journal: d.journal ?? "", firstAuthor: d.firstAuthor ?? "",
+      targetDate: d.targetDate ?? "", doi: d.doi ?? "",
+      url: d.url ?? "", notes: d.notes ?? "",
+      publishedYear: d.publishedYear ? String(d.publishedYear) : "",
+    });
+    setShowDeliverableForm(true);
+  };
+
+  const handleSaveDeliverable = async () => {
+    if (!card || !deliverableForm.title) return;
+    setSavingDeliverable(true);
+    const payload = {
+      title: deliverableForm.title,
+      type: deliverableForm.type,
+      status: deliverableForm.status,
+      journal: deliverableForm.journal || null,
+      firstAuthor: deliverableForm.firstAuthor || null,
+      targetDate: deliverableForm.targetDate || null,
+      doi: deliverableForm.doi || null,
+      url: deliverableForm.url || null,
+      notes: deliverableForm.notes || null,
+      publishedYear: deliverableForm.publishedYear ? parseInt(deliverableForm.publishedYear) : null,
+    };
+    try {
+      if (editingDeliverable) {
+        const r = await fetch(`${BASE}/api/deliverables/${editingDeliverable.id}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        });
+        const updated = await r.json();
+        setDeliverables(prev => prev.map(d => d.id === updated.id ? updated : d));
+      } else {
+        const r = await fetch(`${BASE}/api/cards/${card.id}/deliverables`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        });
+        const created = await r.json();
+        setDeliverables(prev => [...prev, created]);
+      }
+      setShowDeliverableForm(false);
+    } finally {
+      setSavingDeliverable(false);
+    }
+  };
+
+  const handleDeleteDeliverable = async (id: number) => {
+    if (!window.confirm("Remove this deliverable/publication?")) return;
+    await fetch(`${BASE}/api/deliverables/${id}`, { method: "DELETE" });
+    setDeliverables(prev => prev.filter(d => d.id !== id));
+  };
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleClose = () => {
@@ -592,6 +728,225 @@ export default function CardDetailDrawer() {
                           </div>
                         )}
                       </div>
+
+                      <Separator />
+
+                      {/* ── Data Source & Cohort Tags ─────────────────────────── */}
+                      <div className="space-y-3">
+                        <Label className="font-semibold text-sm flex items-center gap-2">
+                          <Database className="w-4 h-4 text-primary" /> Data Source &amp; Cohort Tags
+                        </Label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Database className="w-3 h-3" /> Data Source
+                            </Label>
+                            <Select
+                              value={tagDataSource || "__none__"}
+                              onValueChange={v => setTagDataSource(v === "__none__" ? "" : v)}
+                              disabled={!isAdmin || isNew}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="None" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {DATA_SOURCES.map(ds => (
+                                  <SelectItem key={ds} value={ds}>{ds}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                              <FilterIcon className="w-3 h-3" /> Cohort/Era
+                            </Label>
+                            <Select
+                              value={tagCohort || "__none__"}
+                              onValueChange={v => setTagCohort(v === "__none__" ? "" : v)}
+                              disabled={!isAdmin || isNew}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="None" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {COHORTS.map(c => (
+                                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        {isAdmin && !isNew && (
+                          <Button size="sm" variant="outline" className="h-7 text-xs"
+                            onClick={handleSaveTags} disabled={savingTags}>
+                            {savingTags ? "Saving…" : "Save Tags"}
+                          </Button>
+                        )}
+                      </div>
+
+                      <Separator />
+
+                      {/* ── Deliverables & Publications ───────────────────────── */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label className="font-semibold text-sm flex items-center gap-2">
+                            <BookOpen className="w-4 h-4 text-primary" /> Deliverables &amp; Publications
+                            {deliverables.length > 0 && (
+                              <span className="text-xs font-normal text-muted-foreground">({deliverables.length})</span>
+                            )}
+                          </Label>
+                          {isAdmin && !isNew && (
+                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1"
+                              onClick={openDeliverableCreate}>
+                              <Plus className="w-3 h-3" /> Add
+                            </Button>
+                          )}
+                        </div>
+
+                        {loadingDeliverables ? (
+                          <div className="space-y-2">
+                            <Skeleton className="h-10 rounded" />
+                            <Skeleton className="h-10 rounded" />
+                          </div>
+                        ) : deliverables.length === 0 ? (
+                          <div className="text-sm text-muted-foreground text-center py-4 border border-dashed rounded-lg">
+                            No deliverables yet.{isAdmin && !isNew && " Click \"Add\" to track a manuscript, report, or product."}
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {deliverables.map(d => {
+                              const statusColors: Record<string, string> = {
+                                drafting: "bg-slate-100 text-slate-600",
+                                submitted: "bg-amber-100 text-amber-700",
+                                accepted: "bg-blue-100 text-blue-700",
+                                published: "bg-green-100 text-green-700",
+                              };
+                              return (
+                                <div key={d.id}
+                                  className="flex items-start gap-3 p-2.5 rounded-lg border bg-muted/20 hover:bg-muted/40 transition-colors group">
+                                  <BookOpen className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-sm font-medium truncate">{d.title}</span>
+                                      <span className={cn("text-[10px] px-1.5 py-0.5 rounded font-medium", statusColors[d.status] ?? "bg-muted text-muted-foreground")}>
+                                        {d.status}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                                      {d.journal && <span className="italic">{d.journal}</span>}
+                                      {d.firstAuthor && <span>{d.firstAuthor}</span>}
+                                      {d.targetDate && <span>Target: {d.targetDate}</span>}
+                                      {d.doi && (
+                                        <a href={`https://doi.org/${d.doi}`} target="_blank" rel="noopener noreferrer"
+                                          className="text-primary hover:underline flex items-center gap-0.5">
+                                          <ExternalLink className="w-3 h-3" /> DOI
+                                        </a>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {isAdmin && (
+                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                      <button className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                                        onClick={() => openDeliverableEdit(d)}>
+                                        <Tags className="w-3 h-3" />
+                                      </button>
+                                      <button className="p-1 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground"
+                                        onClick={() => handleDeleteDeliverable(d.id)}>
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Deliverable form dialog */}
+                      {showDeliverableForm && (
+                        <div className="fixed inset-0 bg-black/40 z-[100] flex items-center justify-center p-4" onClick={() => setShowDeliverableForm(false)}>
+                          <div className="bg-background rounded-xl shadow-xl w-full max-w-md p-5 space-y-4" onClick={e => e.stopPropagation()}>
+                            <h3 className="font-semibold text-base flex items-center gap-2">
+                              <BookOpen className="w-4 h-4 text-primary" />
+                              {editingDeliverable ? "Edit Deliverable" : "Add Deliverable"}
+                            </h3>
+                            <div className="space-y-3">
+                              <div className="space-y-1">
+                                <Label className="text-xs">Title *</Label>
+                                <Input value={deliverableForm.title}
+                                  onChange={e => setDeliverableForm(f => ({ ...f, title: e.target.value }))}
+                                  placeholder="Full title of manuscript/report" className="h-8 text-sm" />
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Type</Label>
+                                  <Select value={deliverableForm.type}
+                                    onValueChange={v => setDeliverableForm(f => ({ ...f, type: v }))}>
+                                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                      {DELIVERABLE_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Status</Label>
+                                  <Select value={deliverableForm.status}
+                                    onValueChange={v => setDeliverableForm(f => ({ ...f, status: v }))}>
+                                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                      {DELIVERABLE_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <Label className="text-xs">First Author</Label>
+                                  <Input value={deliverableForm.firstAuthor}
+                                    onChange={e => setDeliverableForm(f => ({ ...f, firstAuthor: e.target.value }))}
+                                    placeholder="Last, First" className="h-8 text-sm" />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Journal / Venue</Label>
+                                  <Input value={deliverableForm.journal}
+                                    onChange={e => setDeliverableForm(f => ({ ...f, journal: e.target.value }))}
+                                    placeholder="Journal name" className="h-8 text-sm" />
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Target Date</Label>
+                                  <Input type="date" value={deliverableForm.targetDate}
+                                    onChange={e => setDeliverableForm(f => ({ ...f, targetDate: e.target.value }))}
+                                    className="h-8 text-sm" />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Published Year</Label>
+                                  <Input type="number" value={deliverableForm.publishedYear}
+                                    onChange={e => setDeliverableForm(f => ({ ...f, publishedYear: e.target.value }))}
+                                    placeholder="e.g. 2024" min="2000" max="2035" className="h-8 text-sm" />
+                                </div>
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs">DOI</Label>
+                                <Input value={deliverableForm.doi}
+                                  onChange={e => setDeliverableForm(f => ({ ...f, doi: e.target.value }))}
+                                  placeholder="10.xxxx/xxxxx" className="h-8 text-sm" />
+                              </div>
+                            </div>
+                            <div className="flex justify-end gap-2 pt-2">
+                              <Button variant="outline" size="sm" onClick={() => setShowDeliverableForm(false)}>Cancel</Button>
+                              <Button size="sm" onClick={handleSaveDeliverable}
+                                disabled={savingDeliverable || !deliverableForm.title}>
+                                {savingDeliverable ? "Saving…" : editingDeliverable ? "Save Changes" : "Add Deliverable"}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       <Separator />
 
