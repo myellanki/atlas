@@ -9,6 +9,7 @@ import Board from "@/pages/board";
 import Gantt from "@/pages/gantt";
 import Labels from "@/pages/labels";
 import Settings from "@/pages/settings";
+import Calendar from "@/pages/calendar";
 
 const queryClient = new QueryClient();
 
@@ -16,6 +17,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/calendar" component={Calendar} />
       <Route path="/board/:teamSlug" component={Board} />
       <Route path="/gantt/:teamId" component={Gantt} />
       <Route path="/labels" component={Labels} />

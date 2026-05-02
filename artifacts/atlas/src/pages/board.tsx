@@ -1,29 +1,37 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { useParams, Link } from "wouter";
-import { 
-  useListTeams, 
-  useListMembers, 
-  useListCards, 
-  useMoveCard, 
+import {
+  useListTeams,
+  useListMembers,
+  useListCards,
+  useMoveCard,
   useUpdateCard,
   useGenerateTeamColumnSummary,
-  getGetDashboardSummaryQueryKey,
   getListCardsQueryKey,
   useGetTeam
 } from "@workspace/api-client-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, MoreHorizontal, MessageSquare, CheckSquare, Link as LinkIcon, BarChart, Bot, ExternalLink, CalendarClock, ChartGantt } from "lucide-react";
+import {
+  Plus, MoreHorizontal, MessageSquare, CheckSquare, Link as LinkIcon,
+  BarChart, Bot, CalendarClock, ChartGantt, ArrowRightLeft, ExternalLink
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Card as CardUI, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuSub,
+  DropdownMenuSubTrigger, DropdownMenuSubContent
+} from "@/components/ui/dropdown-menu";
 import { useAppStore } from "@/lib/store";
 import CardDetailDrawer from "@/components/card-detail-drawer";
 import AnalystGanttPanel from "@/components/analyst-gantt-panel";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 
 const priorityColors = {
   low: "bg-blue-500",
@@ -44,6 +52,7 @@ export default function Board() {
   const { teamSlug } = useParams();
   const queryClient = useQueryClient();
   const { role, setSelectedCardId } = useAppStore();
+  const { toast } = useToast();
   const [activeGanttMember, setActiveGanttMember] = useState<{ id: number; name: string } | null>(null);
 
   // Find team by slug
@@ -51,12 +60,11 @@ export default function Board() {
   const team = useMemo(() => teams?.find(t => t.slug === teamSlug), [teams, teamSlug]);
   const teamId = team?.id;
 
-  // Load members and cards
+  // Load members and cards for current team
   const { data: members, isLoading: loadingMembers } = useListMembers(
     { teamId },
     { query: { enabled: !!teamId } }
   );
-  
   const { data: cards, isLoading: loadingCards } = useListCards(
     { teamId },
     { query: { enabled: !!teamId } }
@@ -65,63 +73,123 @@ export default function Board() {
   const moveCardMutation = useMoveCard();
   const generateSummaryMutation = useGenerateTeamColumnSummary();
 
-  const handleDragEnd = (result: DropResult) => {
+  // ── Drag-and-drop ──────────────────────────────────────────────────────────
+  const handleDragEnd = useCallback((result: DropResult) => {
     if (!result.destination || !teamId) return;
 
-    const sourceColId = result.source.droppableId;
-    const destColId = result.destination.droppableId;
-    const cardId = parseInt(result.draggableId);
-    
-    // Optimistic update logic could go here
-    
-    // Convert unassigned string to null, or keep number
-    const newAssigneeId = destColId === "unassigned" ? null : parseInt(destColId);
+    const { source, destination } = result;
+    if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
-    moveCardMutation.mutate({
-      data: {
-        teamId: teamId,
-        assigneeId: newAssigneeId,
-        position: result.destination.index
-      }
-    }, {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListCardsQueryKey({ teamId }) });
-      }
+    const cardId = parseInt(result.draggableId);
+    const newAssigneeId = destination.droppableId === "unassigned"
+      ? null
+      : parseInt(destination.droppableId);
+
+    // Optimistic update: change assignee + reorder positions in that column
+    queryClient.setQueryData(getListCardsQueryKey({ teamId }), (old: any[]) => {
+      if (!old) return old;
+
+      // Remove card from old column, insert into new column at correct index
+      const others = old.filter(c => c.id !== cardId);
+      const moved = old.find(c => c.id === cardId);
+      if (!moved) return old;
+
+      const updatedMoved = { ...moved, assigneeId: newAssigneeId, position: destination.index };
+
+      // Re-calculate positions for destination column
+      const destColCards = others
+        .filter(c => c.assigneeId === newAssigneeId)
+        .sort((a, b) => a.position - b.position);
+
+      destColCards.splice(destination.index, 0, updatedMoved);
+
+      const destUpdated = destColCards.map((c, i) => ({ ...c, position: i }));
+
+      // For source column, re-normalize positions too
+      const srcAssigneeId = source.droppableId === "unassigned" ? null : parseInt(source.droppableId);
+      const srcColCards = others
+        .filter(c => c.assigneeId === srcAssigneeId && c.assigneeId !== newAssigneeId)
+        .sort((a, b) => a.position - b.position)
+        .map((c, i) => ({ ...c, position: i }));
+
+      // Cards that are in neither source nor dest column
+      const untouched = others.filter(c =>
+        c.assigneeId !== newAssigneeId && c.assigneeId !== srcAssigneeId
+      );
+
+      return [...untouched, ...srcColCards, ...destUpdated];
     });
-  };
+
+    moveCardMutation.mutate(
+      { cardId, data: { teamId, assigneeId: newAssigneeId, position: destination.index } },
+      {
+        onError: () => {
+          // Revert on failure
+          queryClient.invalidateQueries({ queryKey: getListCardsQueryKey({ teamId }) });
+          toast({ title: "Failed to move card", variant: "destructive" });
+        },
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListCardsQueryKey({ teamId }) });
+        }
+      }
+    );
+  }, [teamId, queryClient, moveCardMutation, toast]);
+
+  // Cross-team move
+  const handleMoveToTeam = useCallback((cardId: number, targetTeamId: number) => {
+    if (!teamId) return;
+    moveCardMutation.mutate(
+      { cardId, data: { teamId: targetTeamId, position: 0 } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListCardsQueryKey({ teamId }) });
+          const targetTeam = teams?.find(t => t.id === targetTeamId);
+          toast({ title: `Card moved to ${targetTeam?.name ?? "team"}` });
+        },
+        onError: () => toast({ title: "Failed to move card", variant: "destructive" })
+      }
+    );
+  }, [teamId, teams, queryClient, moveCardMutation, toast]);
 
   const handleGenerateSummaries = () => {
     if (!teamId) return;
     generateSummaryMutation.mutate({ data: { teamId } });
-    // In a real app we might poll or invalidate a specific query to refresh summaries
   };
 
   // Group cards by assignee
   const columns = useMemo(() => {
     if (!members || !cards) return [];
-    
-    const cols = [
-      { id: "unassigned", title: "Unassigned", cards: cards.filter(c => !c.assigneeId).sort((a, b) => a.position - b.position) },
+    return [
+      {
+        id: "unassigned",
+        title: "Unassigned",
+        cards: cards.filter(c => !c.assigneeId).sort((a, b) => a.position - b.position)
+      },
       ...members.sort((a, b) => a.position - b.position).map(m => ({
         id: m.id.toString(),
         title: m.name,
         cards: cards.filter(c => c.assigneeId === m.id).sort((a, b) => a.position - b.position)
       }))
     ];
-    return cols;
   }, [members, cards]);
+
+  // Other teams for cross-team move
+  const otherTeams = useMemo(() => teams?.filter(t => t.id !== teamId) ?? [], [teams, teamId]);
 
   if (!teamSlug) return null;
 
   return (
     <div className="flex flex-col h-full bg-background">
+      {/* Board header */}
       <div className="px-6 py-4 border-b flex items-center justify-between shrink-0 bg-card">
         <div className="flex items-center gap-3">
           {team ? (
             <>
               <div className="w-4 h-4 rounded-sm" style={{ backgroundColor: team.color }} />
               <h1 className="text-xl font-bold">{team.name} Board</h1>
-              {team.description && <span className="text-sm text-muted-foreground ml-2">{team.description}</span>}
+              {team.description && (
+                <span className="text-sm text-muted-foreground ml-2">{team.description}</span>
+              )}
             </>
           ) : (
             <Skeleton className="h-8 w-48" />
@@ -145,6 +213,7 @@ export default function Board() {
         </div>
       </div>
 
+      {/* Kanban columns */}
       <div className="flex-1 overflow-hidden">
         <ScrollArea className="h-full w-full">
           <div className="p-6 inline-flex h-full min-h-[calc(100vh-140px)] gap-6 items-start">
@@ -159,6 +228,7 @@ export default function Board() {
                 ))
               ) : columns.map(col => (
                 <div key={col.id} className="w-[340px] shrink-0 flex flex-col bg-muted/30 rounded-xl border p-3 max-h-full">
+                  {/* Column header */}
                   <div className="font-semibold flex items-center justify-between px-1 mb-3">
                     <button
                       className={cn(
@@ -173,8 +243,8 @@ export default function Board() {
                         );
                       }}
                       disabled={col.id === "unassigned" || !teamId}
-                      aria-label={col.id !== "unassigned" ? `Toggle Gantt chart for ${col.title}` : undefined}
-                      aria-expanded={activeGanttMember?.id === parseInt(col.id)}
+                      aria-label={col.id !== "unassigned" ? `Toggle Gantt for ${col.title}` : undefined}
+                      aria-expanded={col.id !== "unassigned" && activeGanttMember?.id === parseInt(col.id)}
                     >
                       <span className="truncate max-w-[180px]">{col.title}</span>
                       <Badge variant="secondary" className="px-1.5 py-0 text-xs">{col.cards.length}</Badge>
@@ -189,15 +259,16 @@ export default function Board() {
                       <MoreHorizontal className="w-4 h-4" />
                     </Button>
                   </div>
-                  
+
+                  {/* Card list (droppable) */}
                   <Droppable droppableId={col.id}>
                     {(provided, snapshot) => (
-                      <div 
-                        {...provided.droppableProps} 
+                      <div
+                        {...provided.droppableProps}
                         ref={provided.innerRef}
                         className={cn(
-                          "flex-1 overflow-y-auto space-y-3 min-h-[100px] px-1",
-                          snapshot.isDraggingOver && "bg-muted/50 rounded-lg"
+                          "flex-1 overflow-y-auto space-y-3 min-h-[100px] px-1 rounded-lg transition-colors",
+                          snapshot.isDraggingOver && "bg-muted/50"
                         )}
                       >
                         {col.cards.map((card, index) => (
@@ -206,45 +277,101 @@ export default function Board() {
                               <div
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
-                                {...provided.dragHandleProps}
-                                onClick={() => setSelectedCardId(card.id)}
                                 style={provided.draggableProps.style}
                               >
                                 <CardUI className={cn(
-                                  "cursor-pointer hover:border-primary/50 transition-colors shadow-sm",
-                                  snapshot.isDragging && "shadow-xl border-primary"
+                                  "hover:border-primary/50 transition-colors shadow-sm cursor-grab active:cursor-grabbing",
+                                  snapshot.isDragging && "shadow-xl border-primary rotate-1"
                                 )}>
-                                  <CardHeader className="p-3 pb-0 space-y-2">
+                                  {/* Drag handle — entire card header area */}
+                                  <CardHeader className="p-3 pb-0 space-y-2" {...provided.dragHandleProps}>
                                     <div className="flex justify-between items-start">
-                                      <div className="flex flex-wrap gap-1.5">
-                                        <Badge variant="secondary" className={cn("text-[10px] uppercase font-semibold border-none px-1.5", statusColors[card.status])}>
+                                      <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
+                                        <Badge
+                                          variant="secondary"
+                                          className={cn("text-[10px] uppercase font-semibold border-none px-1.5", statusColors[card.status as keyof typeof statusColors])}
+                                        >
                                           {card.status.replace("_", " ")}
                                         </Badge>
                                         {card.labels.map(l => (
-                                          <div key={l.id} className="px-1.5 py-0.5 rounded text-[10px] font-medium text-white flex items-center gap-1 shadow-sm" style={{ backgroundColor: l.color }}>
+                                          <div
+                                            key={l.id}
+                                            className="px-1.5 py-0.5 rounded text-[10px] font-medium text-white flex items-center gap-1 shadow-sm"
+                                            style={{ backgroundColor: l.color }}
+                                          >
                                             {l.name}
                                           </div>
                                         ))}
                                       </div>
-                                      <div className={cn("w-2.5 h-2.5 rounded-full shrink-0 shadow-sm", priorityColors[card.priority])} title={`Priority: ${card.priority}`} />
+                                      <div className="flex items-center gap-1 shrink-0 ml-1">
+                                        <div
+                                          className={cn("w-2.5 h-2.5 rounded-full shadow-sm", priorityColors[card.priority as keyof typeof priorityColors])}
+                                          title={`Priority: ${card.priority}`}
+                                        />
+                                        {/* Card context menu */}
+                                        <DropdownMenu>
+                                          <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
+                                            <button className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-muted transition-opacity w-5 h-5 flex items-center justify-center">
+                                              <MoreHorizontal className="w-3 h-3" />
+                                            </button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align="end" className="w-48" onClick={e => e.stopPropagation()}>
+                                            <DropdownMenuItem onClick={() => setSelectedCardId(card.id)}>
+                                              <ExternalLink className="w-3.5 h-3.5 mr-2" /> Open card
+                                            </DropdownMenuItem>
+                                            {role === "admin" && otherTeams.length > 0 && (
+                                              <>
+                                                <DropdownMenuSeparator />
+                                                <DropdownMenuSub>
+                                                  <DropdownMenuSubTrigger>
+                                                    <ArrowRightLeft className="w-3.5 h-3.5 mr-2" /> Move to team
+                                                  </DropdownMenuSubTrigger>
+                                                  <DropdownMenuSubContent>
+                                                    {otherTeams.map(t => (
+                                                      <DropdownMenuItem
+                                                        key={t.id}
+                                                        onClick={() => handleMoveToTeam(card.id, t.id)}
+                                                      >
+                                                        <div className="w-2.5 h-2.5 rounded-full mr-2" style={{ backgroundColor: t.color }} />
+                                                        {t.name}
+                                                      </DropdownMenuItem>
+                                                    ))}
+                                                  </DropdownMenuSubContent>
+                                                </DropdownMenuSub>
+                                              </>
+                                            )}
+                                          </DropdownMenuContent>
+                                        </DropdownMenu>
+                                      </div>
                                     </div>
-                                    <h3 className="font-medium text-sm leading-tight line-clamp-2">
+                                    <h3
+                                      className="font-medium text-sm leading-tight line-clamp-2 cursor-pointer hover:text-primary transition-colors"
+                                      onClick={() => setSelectedCardId(card.id)}
+                                    >
                                       {card.title}
                                     </h3>
                                   </CardHeader>
-                                  <CardContent className="p-3 pt-2 pb-2">
+
+                                  <CardContent
+                                    className="p-3 pt-2 pb-2 cursor-pointer"
+                                    onClick={() => setSelectedCardId(card.id)}
+                                  >
                                     {card.latestNote && (
                                       <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded-md line-clamp-2 border border-border/50">
                                         {card.latestNote}
                                       </div>
                                     )}
                                   </CardContent>
-                                  <CardFooter className="p-3 pt-0 flex justify-between items-center text-xs text-muted-foreground">
+
+                                  <CardFooter
+                                    className="p-3 pt-0 flex justify-between items-center text-xs text-muted-foreground cursor-pointer"
+                                    onClick={() => setSelectedCardId(card.id)}
+                                  >
                                     <div className="flex items-center gap-3">
                                       {card.dueDate && (
                                         <div className={cn(
-                                          "flex items-center gap-1", 
-                                          new Date(card.dueDate) < new Date() && card.status !== 'done' && "text-destructive font-medium"
+                                          "flex items-center gap-1",
+                                          new Date(card.dueDate) < new Date() && card.status !== "done" && "text-destructive font-medium"
                                         )}>
                                           <CalendarClock className="w-3.5 h-3.5" />
                                           {format(new Date(card.dueDate), "MMM d")}
@@ -278,6 +405,16 @@ export default function Board() {
                           </Draggable>
                         ))}
                         {provided.placeholder}
+
+                        {/* Add card button at column bottom */}
+                        {role === "admin" && (
+                          <button
+                            className="w-full text-left text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-lg px-2 py-2 flex items-center gap-1.5 transition-colors mt-1"
+                            onClick={() => setSelectedCardId(-1)}
+                          >
+                            <Plus className="w-3.5 h-3.5" /> Add card
+                          </button>
+                        )}
                       </div>
                     )}
                   </Droppable>
@@ -289,7 +426,7 @@ export default function Board() {
         </ScrollArea>
       </div>
 
-      {/* Analyst Gantt Panel — slides up from bottom when an analyst name is clicked */}
+      {/* Analyst Gantt panel */}
       {activeGanttMember && teamId && (
         <div className="border-t shrink-0 bg-background z-20 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
           <div className="p-4">
@@ -303,15 +440,14 @@ export default function Board() {
         </div>
       )}
 
+      {/* AI Column Summaries */}
       <div className="border-t bg-card p-4 shrink-0 shadow-[0_-4px_6px_-1px_rgb(0,0,0,0.05)] z-10">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold flex items-center gap-2">
             <Bot className="w-4 h-4 text-primary" /> AI Column Summaries
           </h3>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="h-7 text-xs" 
+          <Button
+            variant="outline" size="sm" className="h-7 text-xs"
             onClick={handleGenerateSummaries}
             disabled={generateSummaryMutation.isPending || !teamId}
           >
@@ -329,7 +465,7 @@ export default function Board() {
           ))}
         </div>
       </div>
-      
+
       <CardDetailDrawer />
     </div>
   );
