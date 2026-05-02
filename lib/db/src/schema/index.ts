@@ -7,3 +7,4 @@ export * from "./checklist";
 export * from "./comments";
 export * from "./links";
 export * from "./activity";
+export * from "./sprints";

@@ -15,7 +15,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Plus, MoreHorizontal, MessageSquare, CheckSquare, Link as LinkIcon,
   BarChart, Bot, CalendarClock, ChartGantt, ArrowRightLeft, ExternalLink,
-  ChevronDown, ChevronUp, Sparkles, Loader2
+  ChevronDown, ChevronUp, Sparkles, Loader2, TrendingDown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,7 @@ import {
 import { useAppStore } from "@/lib/store";
 import CardDetailDrawer from "@/components/card-detail-drawer";
 import AnalystGanttPanel from "@/components/analyst-gantt-panel";
+import SprintBurndown from "@/components/sprint-burndown";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -55,6 +56,7 @@ export default function Board() {
   const { role, setSelectedCardId } = useAppStore();
   const { toast } = useToast();
   const [activeGanttMember, setActiveGanttMember] = useState<{ id: number; name: string } | null>(null);
+  const [showBurndown, setShowBurndown] = useState(false);
 
   // ── Per-card expand state ──────────────────────────────────────────────────
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
@@ -224,6 +226,17 @@ export default function Board() {
                 <BarChart className="w-4 h-4" />
                 Team Gantt
               </Link>
+            </Button>
+          )}
+          {teamId && (
+            <Button
+              variant={showBurndown ? "default" : "outline"}
+              size="sm"
+              className="flex items-center gap-2"
+              onClick={() => setShowBurndown(v => !v)}
+            >
+              <TrendingDown className="w-4 h-4" />
+              Burndown
             </Button>
           )}
           {role === "admin" && (
@@ -508,6 +521,18 @@ export default function Board() {
               memberId={activeGanttMember.id}
               memberName={activeGanttMember.name}
               onClose={() => setActiveGanttMember(null)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Sprint Burndown panel */}
+      {showBurndown && teamId && (
+        <div className="border-t shrink-0 bg-background z-20 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+          <div className="p-4">
+            <SprintBurndown
+              teamId={teamId}
+              onClose={() => setShowBurndown(false)}
             />
           </div>
         </div>

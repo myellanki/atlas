@@ -11,6 +11,7 @@ import linksRouter from "./links";
 import dashboardRouter from "./dashboard";
 import ganttRouter from "./gantt";
 import aiRouter from "./ai";
+import sprintsRouter from "./sprints";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(linksRouter);
 router.use(dashboardRouter);
 router.use(ganttRouter);
 router.use(aiRouter);
+router.use(sprintsRouter);
 
 export default router;
