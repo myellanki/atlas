@@ -20,6 +20,9 @@ import cardTemplatesRouter from "./cardTemplates";
 import searchRouter from "./search";
 import irbRouter from "./irb";
 import attachmentsRouter from "./attachments";
+import cardDependenciesRouter from "./card-dependencies";
+import notificationsRouter from "./notifications";
+import reportsRouter from "./reports";
 
 const router: IRouter = Router();
 
@@ -44,5 +47,8 @@ router.use(cardTemplatesRouter);
 router.use(searchRouter);
 router.use(irbRouter);
 router.use(attachmentsRouter);
+router.use(cardDependenciesRouter);
+router.use(notificationsRouter);
+router.use(reportsRouter);
 
 export default router;

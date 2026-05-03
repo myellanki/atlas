@@ -3,11 +3,14 @@ import { useGetDashboardSummary, useGetTeamSummaries, useGetRecentActivity } fro
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
-import { Activity, AlertCircle, CheckCircle2, Clock, Layers, Users, Kanban, Columns, ChevronRight, ChevronDown } from "lucide-react";
+import { Activity, AlertCircle, CheckCircle2, Clock, Layers, Users, Kanban, ChevronRight, ChevronDown, FileDown, Loader2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import AnalystGanttPanel from "@/components/analyst-gantt-panel";
+
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
 export default function Dashboard() {
   const { data: summary, isLoading: loadingSummary } = useGetDashboardSummary();
@@ -15,6 +18,52 @@ export default function Dashboard() {
   const { data: activity, isLoading: loadingActivity } = useGetRecentActivity({ limit: 10 });
   // key = `${teamId}-${memberId}`
   const [openGanttKey, setOpenGanttKey] = useState<string | null>(null);
+  const [generatingReport, setGeneratingReport] = useState(false);
+
+  const handleGenerateReport = async () => {
+    setGeneratingReport(true);
+    try {
+      const r = await fetch(`${BASE}/api/reports/summary`);
+      const data = await r.json();
+      const lines: string[] = [];
+      lines.push(`Atlas Report — Generated ${new Date().toLocaleString()}`);
+      lines.push("");
+      lines.push("OVERALL SUMMARY");
+      lines.push(`Total Projects,${data.totals.cards}`);
+      lines.push(`In Progress,${data.totals.inProgress}`);
+      lines.push(`Blocked,${data.totals.blocked}`);
+      lines.push(`Done,${data.totals.done}`);
+      lines.push(`Overdue,${data.totals.overdue}`);
+      lines.push(`IRB Submissions,${data.totals.irbTotal}`);
+      lines.push(`IRB Approved,${data.totals.irbApproved}`);
+      lines.push(`IRB Expired,${data.totals.irbExpired}`);
+      lines.push("");
+      lines.push("TEAM BREAKDOWN");
+      lines.push("Team,Total,Not Started,In Progress,In Review,Blocked,Done,Overdue");
+      (data.teamSummaries as any[]).forEach(t => {
+        lines.push(`"${t.team}",${t.total},${t.notStarted},${t.inProgress},${t.inReview},${t.blocked},${t.done},${t.overdue}`);
+      });
+      lines.push("");
+      lines.push("ALL PROJECTS");
+      lines.push("ID,Title,Team,Assignee,Status,Priority,Due Date,Overdue");
+      (data.cards as any[]).forEach(c => {
+        lines.push(`${c.id},"${String(c.title).replace(/"/g,'""')}","${c.team}","${c.assignee}",${c.status},${c.priority ?? ""},"${c.dueDate}",${c.isOverdue ? "Yes" : "No"}`);
+      });
+      lines.push("");
+      lines.push("IRB SUBMISSIONS");
+      lines.push("ID,Protocol #,Title,PI,IRB Member,Type,Status,Priority,Expiration,Team");
+      (data.irb as any[]).forEach(i => {
+        lines.push(`${i.id},"${i.protocolNumber}","${String(i.title).replace(/"/g,'""')}","${i.pi}","${i.irbTeamMember}",${i.submissionType},${i.status},${i.priority ?? ""},"${i.expirationDate}","${i.team}"`);
+      });
+      const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `atlas-report-${new Date().toISOString().split("T")[0]}.csv`;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+    } catch { /* ignore */ } finally { setGeneratingReport(false); }
+  };
 
   const toggleGantt = (teamId: number, memberId: number) => {
     const key = `${teamId}-${memberId}`;
@@ -23,9 +72,15 @@ export default function Dashboard() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8">
-      <div className="flex flex-col space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">Overview of all data science groups and projects.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground">Overview of all data science groups and projects.</p>
+        </div>
+        <Button variant="outline" onClick={handleGenerateReport} disabled={generatingReport} className="gap-2 shrink-0">
+          {generatingReport ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+          {generatingReport ? "Generating…" : "Generate Report"}
+        </Button>
       </div>
 
       {loadingSummary ? (

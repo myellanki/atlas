@@ -6,7 +6,10 @@ import {
   useListTeams, useCreateTeam, getListTeamsQueryKey,
   useListCards
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 import {
   LayoutDashboard, Tags, Settings, UserCircle,
   Plus, CalendarDays, Layers, Bell, BellOff,
@@ -68,6 +71,27 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   // Alerts panel state
   const [alertsOpen, setAlertsOpen] = useState(false);
+
+  // Notifications
+  const { data: notifications = [] } = useQuery<any[]>({
+    queryKey: ["notifications"],
+    queryFn: async () => { const r = await fetch(`${BASE}/api/notifications`); return r.json(); },
+    refetchInterval: 30000,
+  });
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const markRead = async (id: number) => {
+    await fetch(`${BASE}/api/notifications/${id}/read`, { method: "PATCH" });
+    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+  };
+  const markAllRead = async () => {
+    await fetch(`${BASE}/api/notifications/read-all`, { method: "POST" });
+    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+  };
+  const deleteNotification = async (id: number) => {
+    await fetch(`${BASE}/api/notifications/${id}`, { method: "DELETE" });
+    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+  };
 
   // New team dialog state
   const [showNewTeam, setShowNewTeam] = useState(false);
@@ -456,6 +480,66 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <span className="hidden sm:inline text-xs">Search…</span>
                 <kbd className="hidden sm:flex items-center gap-0.5 text-[10px] bg-background border rounded px-1 py-0.5 ml-1">⌘K</kbd>
               </button>
+
+              {/* Notification bell */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="relative p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground" title="Notifications">
+                    <Bell className="w-4 h-4" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-primary text-primary-foreground text-[9px] font-bold rounded-full flex items-center justify-center">
+                        {unreadCount > 9 ? "9+" : unreadCount}
+                      </span>
+                    )}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-80 p-0">
+                  <div className="flex items-center justify-between px-3 py-2 border-b">
+                    <span className="text-sm font-semibold">Notifications</span>
+                    {unreadCount > 0 && (
+                      <button onClick={markAllRead} className="text-xs text-muted-foreground hover:text-primary transition-colors">
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  <ScrollArea className="max-h-72">
+                    {notifications.length === 0 ? (
+                      <div className="text-sm text-muted-foreground text-center py-8">No notifications</div>
+                    ) : (
+                      <div className="py-1">
+                        {notifications.map((n: any) => (
+                          <div
+                            key={n.id}
+                            onClick={() => !n.read && markRead(n.id)}
+                            className={cn(
+                              "flex items-start gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors border-b last:border-0",
+                              !n.read && "bg-primary/5"
+                            )}
+                          >
+                            <div className={cn(
+                              "w-2 h-2 rounded-full mt-1.5 shrink-0",
+                              !n.read ? "bg-primary" : "bg-transparent border border-muted-foreground/30"
+                            )} />
+                            <div className="flex-1 min-w-0">
+                              <p className={cn("text-xs font-medium leading-snug", !n.read && "text-foreground")}>{n.title}</p>
+                              {n.message && <p className="text-[10px] text-muted-foreground mt-0.5 leading-snug line-clamp-2">{n.message}</p>}
+                              <p className="text-[10px] text-muted-foreground/60 mt-1">
+                                {format(new Date(n.createdAt), "MMM d, h:mm a")}
+                              </p>
+                            </div>
+                            <button
+                              onClick={e => { e.stopPropagation(); deleteNotification(n.id); }}
+                              className="shrink-0 p-0.5 rounded hover:text-destructive text-muted-foreground/40 transition-colors"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
               {/* Compact alert badge in header (visible when sidebar is collapsed) */}
               {totalUrgent > 0 && (

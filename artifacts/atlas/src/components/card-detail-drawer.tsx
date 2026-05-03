@@ -43,7 +43,7 @@ import {
   CalendarIcon, MessageSquare, Plus, CheckSquare, Tags, Trash2, X,
   Send, AlertCircle, Users, Link2, ExternalLink, ArrowUpRight, Globe, Layers,
   BookOpen, Database, Filter as FilterIcon, Paperclip, Download, FileText,
-  File, ImageIcon, FileSpreadsheet,
+  File, ImageIcon, FileSpreadsheet, Network,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
@@ -205,6 +205,46 @@ export default function CardDetailDrawer() {
     return `${(bytes / 1048576).toFixed(1)} MB`;
   }
 
+  // Dependencies state
+  interface CardDep {
+    id: number; cardId: number; dependsOnCardId: number;
+    dependsOnCard: { id: number; title: string; status: string; teamId: number | null } | null;
+  }
+  const [deps, setDeps] = useState<CardDep[]>([]);
+  const [showDepDialog, setShowDepDialog] = useState(false);
+  const [depSearch, setDepSearch] = useState("");
+
+  const fetchDeps = async (cardId: number) => {
+    try {
+      const r = await fetch(`${BASE}/api/cards/${cardId}/dependencies`);
+      setDeps(await r.json());
+    } catch { /* ignore */ }
+  };
+
+  const addDep = async (depCardId: number) => {
+    if (!selectedCardId || selectedCardId < 1) return;
+    const r = await fetch(`${BASE}/api/cards/${selectedCardId}/dependencies`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dependsOnCardId: depCardId }),
+    });
+    if (r.ok) {
+      await fetchDeps(selectedCardId);
+      setShowDepDialog(false); setDepSearch("");
+      toast({ title: "Dependency added" });
+    } else {
+      const d = await r.json();
+      toast({ title: d.error ?? "Failed to add dependency", variant: "destructive" });
+    }
+  };
+
+  const removeDep = async (depId: number) => {
+    if (!selectedCardId) return;
+    await fetch(`${BASE}/api/cards/${selectedCardId}/dependencies/${depId}`, { method: "DELETE" });
+    setDeps(prev => prev.filter(d => d.id !== depId));
+    toast({ title: "Dependency removed" });
+  };
+
   const initializedForId = useRef<number | null>(null);
 
   // ── Sync card data to local state ──────────────────────────────────────────
@@ -245,6 +285,7 @@ export default function CardDetailDrawer() {
       .catch(() => setDeliverables([]))
       .finally(() => setLoadingDeliverables(false));
     fetchAttachments(card.id);
+    fetchDeps(card.id);
     // sync tag state from card (uses 'any' because the generated type doesn't include these fields yet)
     setTagDataSource((card as any).dataSource ?? "");
     setTagCohort((card as any).cohort ?? "");
@@ -698,6 +739,52 @@ export default function CardDetailDrawer() {
                           )}
                         </div>
                       </div>
+
+                      {/* ── Dependencies ─────────────────────────────────────── */}
+                      {(deps.length > 0 || (isAdmin && !isNew)) && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs font-medium flex items-center gap-1.5 text-muted-foreground">
+                              <Network className="w-3.5 h-3.5" /> Blocked By
+                              {deps.length > 0 && <span className="text-[10px]">({deps.length})</span>}
+                            </Label>
+                            {isAdmin && !isNew && (
+                              <button
+                                onClick={() => setShowDepDialog(true)}
+                                className="text-[10px] text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5"
+                              >
+                                <Plus className="w-3 h-3" /> Add
+                              </button>
+                            )}
+                          </div>
+                          {deps.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {deps.map(d => (
+                                <div key={d.id} className="flex items-center gap-1 text-xs bg-muted/60 rounded-md px-2 py-1 border group hover:bg-muted transition-colors">
+                                  <button
+                                    className="hover:text-primary transition-colors font-medium truncate max-w-[150px]"
+                                    onClick={() => setSelectedCardId(d.dependsOnCardId)}
+                                    title={d.dependsOnCard?.title}
+                                  >
+                                    {d.dependsOnCard?.title ?? `Card #${d.dependsOnCardId}`}
+                                  </button>
+                                  {isAdmin && (
+                                    <button
+                                      onClick={() => removeDep(d.id)}
+                                      className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-all ml-0.5 shrink-0"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {deps.length === 0 && (
+                            <p className="text-xs text-muted-foreground italic">No dependencies. Click Add to link a blocking card.</p>
+                          )}
+                        </div>
+                      )}
 
                       <Separator />
 
@@ -1317,6 +1404,58 @@ export default function CardDetailDrawer() {
               {linkSaving ? "Adding…" : "Add Link"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dependency search dialog ──────────────────────────── */}
+      <Dialog open={showDepDialog} onOpenChange={o => { setShowDepDialog(o); if (!o) setDepSearch(""); }}>
+        <DialogContent className="sm:max-w-sm p-0">
+          <DialogHeader className="px-4 pt-4 pb-2">
+            <DialogTitle className="text-sm flex items-center gap-2">
+              <Network className="w-4 h-4 text-primary" /> Add Dependency — Blocked By
+            </DialogTitle>
+          </DialogHeader>
+          <div className="px-3 pb-3">
+            <p className="text-xs text-muted-foreground mb-2">
+              Select a card that must be completed before this one can proceed.
+            </p>
+            <Command>
+              <CommandInput
+                placeholder="Search cards…"
+                value={depSearch}
+                onValueChange={setDepSearch}
+                className="h-9 text-sm"
+              />
+              <CommandList className="max-h-52">
+                <CommandEmpty>No matching cards found.</CommandEmpty>
+                <CommandGroup>
+                  {allCards
+                    ?.filter(c =>
+                      c.id !== selectedCardId &&
+                      !deps.some(d => d.dependsOnCardId === c.id) &&
+                      (!depSearch.trim() || c.title.toLowerCase().includes(depSearch.toLowerCase()))
+                    )
+                    .slice(0, 25)
+                    .map(c => (
+                      <CommandItem
+                        key={c.id}
+                        value={String(c.id)}
+                        onSelect={() => addDep(c.id)}
+                        className="text-sm gap-2 cursor-pointer"
+                      >
+                        <span className={cn(
+                          "text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0",
+                          STATUS_COLORS[c.status] ?? "bg-muted"
+                        )}>
+                          {c.status.replace("_", " ")}
+                        </span>
+                        <span className="flex-1 truncate">{c.title}</span>
+                      </CommandItem>
+                    ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </div>
         </DialogContent>
       </Dialog>
     </>
