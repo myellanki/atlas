@@ -15,7 +15,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Plus, MoreHorizontal, MessageSquare, CheckSquare, Link as LinkIcon,
   BarChart, Bot, CalendarClock, ChartGantt, ArrowRightLeft, ExternalLink,
-  ChevronDown, ChevronUp, Sparkles, Loader2, TrendingDown
+  ChevronDown, ChevronUp, ChevronRight, Sparkles, Loader2, TrendingDown,
+  Archive, ArchiveRestore,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +35,8 @@ import SprintBurndown from "@/components/sprint-burndown";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
 const priorityColors = {
   low: "bg-blue-500",
@@ -60,8 +63,17 @@ export default function Board() {
 
   // ── Per-card expand state ──────────────────────────────────────────────────
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
+  const [expandedArchived, setExpandedArchived] = useState<Set<string>>(new Set());
   const [cardAiSummaries, setCardAiSummaries] = useState<Record<number, string>>({});
   const [aiLoadingCard, setAiLoadingCard] = useState<number | null>(null);
+
+  const toggleArchivedSection = useCallback((colId: string) => {
+    setExpandedArchived(prev => {
+      const next = new Set(prev);
+      next.has(colId) ? next.delete(colId) : next.add(colId);
+      return next;
+    });
+  }, []);
 
   const toggleCardExpand = useCallback((cardId: number, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -181,20 +193,30 @@ export default function Board() {
     generateSummaryMutation.mutate({ data: { teamId } });
   };
 
-  // Group cards by assignee
+  // Archive / unarchive
+  const handleArchiveCard = useCallback(async (cardId: number, archive: boolean) => {
+    await fetch(`${BASE}/api/cards/${cardId}/archive`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived: archive }),
+    });
+    queryClient.invalidateQueries({ queryKey: getListCardsQueryKey({ teamId }) });
+    toast({ title: archive ? "Card archived" : "Card restored", description: archive ? "Find it in the archived section below." : undefined });
+  }, [teamId, queryClient, toast]);
+
+  // Group cards by assignee — split active vs archived per column
   const columns = useMemo(() => {
     if (!members || !cards) return [];
+    const makeCol = (id: string, title: string, colCards: typeof cards) => ({
+      id, title,
+      cards:         colCards.filter(c => !(c as any).archived).sort((a, b) => a.position - b.position),
+      archivedCards: colCards.filter(c =>  (c as any).archived).sort((a, b) => a.position - b.position),
+    });
     return [
-      {
-        id: "unassigned",
-        title: "Unassigned",
-        cards: cards.filter(c => !c.assigneeId).sort((a, b) => a.position - b.position)
-      },
-      ...members.sort((a, b) => a.position - b.position).map(m => ({
-        id: m.id.toString(),
-        title: m.name,
-        cards: cards.filter(c => c.assigneeId === m.id).sort((a, b) => a.position - b.position)
-      }))
+      makeCol("unassigned", "Unassigned", cards.filter(c => !c.assigneeId)),
+      ...members.sort((a, b) => a.position - b.position).map(m =>
+        makeCol(m.id.toString(), m.name, cards.filter(c => c.assigneeId === m.id))
+      ),
     ];
   }, [members, cards]);
 
@@ -283,6 +305,11 @@ export default function Board() {
                     >
                       <span className="truncate max-w-[180px]">{col.title}</span>
                       <Badge variant="secondary" className="px-1.5 py-0 text-xs">{col.cards.length}</Badge>
+                      {col.archivedCards.length > 0 && (
+                        <Badge variant="outline" className="px-1.5 py-0 text-[10px] text-muted-foreground gap-0.5 flex items-center">
+                          <Archive className="w-2.5 h-2.5" />{col.archivedCards.length}
+                        </Badge>
+                      )}
                       {col.id !== "unassigned" && (
                         <ChartGantt className={cn(
                           "w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-70 transition-opacity",
@@ -357,6 +384,13 @@ export default function Board() {
                                             <DropdownMenuContent align="end" className="w-48" onClick={e => e.stopPropagation()}>
                                               <DropdownMenuItem onClick={() => setSelectedCardId(card.id)}>
                                                 <ExternalLink className="w-3.5 h-3.5 mr-2" /> Open card
+                                              </DropdownMenuItem>
+                                              <DropdownMenuSeparator />
+                                              <DropdownMenuItem
+                                                onClick={() => handleArchiveCard(card.id, true)}
+                                                className="text-muted-foreground"
+                                              >
+                                                <Archive className="w-3.5 h-3.5 mr-2" /> Archive
                                               </DropdownMenuItem>
                                               {role === "admin" && otherTeams.length > 0 && (
                                                 <>
@@ -504,6 +538,62 @@ export default function Board() {
                       </div>
                     )}
                   </Droppable>
+
+                  {/* ── Archived cards for this column ── */}
+                  {col.archivedCards.length > 0 && (
+                    <div className="mt-2 border-t border-dashed border-border/60 pt-2">
+                      <button
+                        onClick={() => toggleArchivedSection(col.id)}
+                        className="w-full flex items-center gap-2 px-1 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 rounded-md transition-colors"
+                      >
+                        <ChevronRight className={cn(
+                          "w-3 h-3 shrink-0 transition-transform",
+                          expandedArchived.has(col.id) && "rotate-90"
+                        )} />
+                        <Archive className="w-3 h-3 shrink-0" />
+                        <span className="flex-1 text-left">
+                          {col.archivedCards.length} archived card{col.archivedCards.length !== 1 ? "s" : ""}
+                        </span>
+                      </button>
+
+                      {expandedArchived.has(col.id) && (
+                        <div className="mt-1.5 space-y-1.5">
+                          {col.archivedCards.map(card => (
+                            <div
+                              key={card.id}
+                              className="group flex items-start gap-2 px-2 py-2 rounded-lg border border-dashed bg-muted/20 hover:bg-muted/40 transition-colors opacity-60 hover:opacity-90"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <p
+                                  className="text-xs font-medium truncate line-through decoration-muted-foreground/40 cursor-pointer hover:text-primary hover:no-underline transition-colors"
+                                  onClick={() => setSelectedCardId(card.id)}
+                                  title={card.title}
+                                >
+                                  {card.title}
+                                </p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className={cn(
+                                    "text-[9px] font-semibold uppercase px-1 py-0.5 rounded",
+                                    statusColors[card.status as keyof typeof statusColors]
+                                  )}>
+                                    {card.status.replace("_", " ")}
+                                  </span>
+                                  <span className="text-[9px] text-muted-foreground font-mono">#{card.id}</span>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleArchiveCard(card.id, false)}
+                                className="shrink-0 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-green-100 hover:text-green-700 text-muted-foreground transition-all"
+                                title="Restore card"
+                              >
+                                <ArchiveRestore className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </DragDropContext>

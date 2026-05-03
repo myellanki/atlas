@@ -151,6 +151,18 @@ router.delete("/cards/:cardId", async (req, res) => {
   res.status(204).send();
 });
 
+router.patch("/cards/:cardId/archive", async (req, res) => {
+  const id = parseInt(req.params.cardId);
+  const { archived } = req.body as { archived: boolean };
+  const [card] = await db.update(cardsTable)
+    .set({ archived: !!archived, updatedAt: new Date() })
+    .where(eq(cardsTable.id, id))
+    .returning();
+  if (!card) return res.status(404).json({ error: "Card not found" });
+  const result = await buildCardResponse(card);
+  res.json(result);
+});
+
 router.post("/cards/:cardId/move", async (req, res) => {
   const id = parseInt(req.params.cardId);
   const body = MoveCardBody.parse(req.body);

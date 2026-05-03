@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, varchar, text, date, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, varchar, text, date, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { teamsTable } from "./teams";
@@ -18,6 +18,7 @@ export const cardsTable = pgTable("cards", {
   position: integer("position").notNull().default(0),
   dataSource: varchar("data_source", { length: 50 }),
   cohort: varchar("cohort", { length: 150 }),
+  archived: boolean("archived").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

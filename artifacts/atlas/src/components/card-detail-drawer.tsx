@@ -43,7 +43,7 @@ import {
   CalendarIcon, MessageSquare, Plus, CheckSquare, Tags, Trash2, X,
   Send, AlertCircle, Users, Link2, ExternalLink, ArrowUpRight, Globe, Layers,
   BookOpen, Database, Filter as FilterIcon, Paperclip, Download, FileText,
-  File, ImageIcon, FileSpreadsheet, Network,
+  File, ImageIcon, FileSpreadsheet, Network, Archive, ArchiveRestore,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
@@ -555,6 +555,22 @@ export default function CardDetailDrawer() {
     });
   };
 
+  // ── Archive / unarchive ────────────────────────────────────────────────────
+  const handleArchiveCard = async (archive: boolean) => {
+    if (!card) return;
+    await fetch(`${BASE}/api/cards/${card.id}/archive`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived: archive }),
+    });
+    queryClient.invalidateQueries({ queryKey: getGetCardQueryKey(card.id) });
+    queryClient.invalidateQueries({ queryKey: getListCardsQueryKey() });
+    toast({
+      title: archive ? "Card archived" : "Card restored",
+      description: archive ? "Find it in the archived section of the board column." : undefined,
+    });
+  };
+
   // Filtered cards for the card-reference picker (exclude current card)
   const filteredCards = allCards?.filter(c =>
     c.id !== selectedCardId &&
@@ -581,7 +597,12 @@ export default function CardDetailDrawer() {
                 readOnly={!isAdmin && !isNew}
               />
               {!isNew && card && (
-                <div className="flex flex-wrap gap-2 mt-3">
+                <div className="flex flex-wrap gap-2 mt-3 items-center">
+                  {(card as any).archived && (
+                    <Badge variant="outline" className="text-amber-600 border-amber-400 bg-amber-50 gap-1 text-xs">
+                      <Archive className="w-3 h-3" /> Archived
+                    </Badge>
+                  )}
                   {card.labels.map(l => (
                     <Badge key={l.id} style={{ backgroundColor: l.color }} className="text-white border-none shadow-sm hover:brightness-110">
                       {l.name}
@@ -617,6 +638,27 @@ export default function CardDetailDrawer() {
                       </PopoverContent>
                     </Popover>
                   )}
+                  <div className="ml-auto">
+                    {(card as any).archived ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-xs gap-1 border-green-400 text-green-700 hover:bg-green-50"
+                        onClick={() => handleArchiveCard(false)}
+                      >
+                        <ArchiveRestore className="w-3 h-3" /> Restore
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs gap-1 text-muted-foreground hover:text-amber-700 hover:bg-amber-50"
+                        onClick={() => handleArchiveCard(true)}
+                      >
+                        <Archive className="w-3 h-3" /> Archive
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
