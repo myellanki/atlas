@@ -5,6 +5,7 @@ import { eq, desc } from "drizzle-orm";
 
 const router = Router();
 
+// GET active (non-archived) submissions
 router.get("/irb", async (_req, res) => {
   const records = await db
     .select()
@@ -38,6 +39,7 @@ router.post("/irb", async (req, res) => {
     approvedDate: approvedDate || null,
     expirationDate: expirationDate || null,
     notes: notes?.trim() || null,
+    archived: false,
   }).returning();
   res.status(201).json(record);
 });
@@ -49,6 +51,7 @@ router.patch("/irb/:id", async (req, res) => {
     irbTeamMember, irbTeamMemberEmail,
     submissionType, status, priority,
     submittedDate, approvedDate, expirationDate, notes, customLabels,
+    archived,
   } = req.body as Record<string, string | null>;
 
   const updates: Record<string, unknown> = {};
@@ -67,6 +70,7 @@ router.patch("/irb/:id", async (req, res) => {
   if (approvedDate !== undefined)        updates.approvedDate = approvedDate || null;
   if (expirationDate !== undefined)      updates.expirationDate = expirationDate || null;
   if (notes !== undefined)               updates.notes = (notes as string)?.trim() || null;
+  if (archived !== undefined)            updates.archived = archived === true || archived === "true";
 
   const [record] = await db.update(irbSubmissionsTable).set(updates).where(eq(irbSubmissionsTable.id, id)).returning();
   if (!record) return res.status(404).json({ error: "Not found" });

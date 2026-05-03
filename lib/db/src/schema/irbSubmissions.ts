@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, smallint, varchar, date, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, smallint, varchar, date, text, timestamp, boolean } from "drizzle-orm/pg-core";
 
 export const irbSubmissionsTable = pgTable("irb_submissions", {
   id: serial("id").primaryKey(),
@@ -17,6 +17,7 @@ export const irbSubmissionsTable = pgTable("irb_submissions", {
   approvedDate: date("approved_date"),
   expirationDate: date("expiration_date"),
   notes: text("notes"),
+  archived: boolean("archived").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
