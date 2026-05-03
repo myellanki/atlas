@@ -16,6 +16,7 @@ import Templates from "@/pages/templates";
 import Portfolio from "@/pages/portfolio";
 import Capacity from "@/pages/capacity";
 import Publications from "@/pages/publications";
+import TagSettings from "@/pages/tag-settings";
 
 const queryClient = new QueryClient();
 
@@ -34,6 +35,7 @@ function Router() {
       <Route path="/portfolio" component={Portfolio} />
       <Route path="/capacity" component={Capacity} />
       <Route path="/publications" component={Publications} />
+      <Route path="/tag-settings" component={TagSettings} />
       <Route component={NotFound} />
     </Switch>
   );

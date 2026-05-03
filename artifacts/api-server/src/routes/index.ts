@@ -15,6 +15,7 @@ import sprintsRouter from "./sprints";
 import milestonesRouter from "./milestones";
 import deliverablesRouter from "./deliverables";
 import portfolioRouter from "./portfolio";
+import customTagsRouter from "./customTags";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(sprintsRouter);
 router.use(milestonesRouter);
 router.use(deliverablesRouter);
 router.use(portfolioRouter);
+router.use(customTagsRouter);
 
 export default router;

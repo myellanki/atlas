@@ -46,11 +46,6 @@ import {
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
-const DATA_SOURCES = ["CDW", "VINCI", "TriNetX", "Cancer Registry", "Survey", "VA Benefits", "External Cohort", "Other"];
-const COHORTS = [
-  "Vietnam Veterans", "Gulf War", "Post-9/11 OEF/OIF", "WWII", "Korea", "General VA",
-  "Bladder Cancer", "Prostate Cancer", "Lung Cancer", "Colorectal Cancer", "Breast Cancer", "Melanoma", "Other",
-];
 const DELIVERABLE_TYPES = [
   { value: "paper",      label: "Journal Paper" },
   { value: "report",     label: "Report" },
@@ -70,6 +65,7 @@ interface Deliverable {
   notes: string | null; publishedYear: number | null;
 }
 import { useToast } from "@/hooks/use-toast";
+import { useTagsByCategory } from "@/hooks/use-tags";
 import { cn } from "@/lib/utils";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -86,6 +82,8 @@ export default function CardDetailDrawer() {
   const { toast } = useToast();
   const isNew = selectedCardId === -1;
   const isOpen = selectedCardId !== null;
+  const { data: dataSources = [] } = useTagsByCategory("data_source");
+  const { data: cohorts = [] } = useTagsByCategory("cohort");
 
   // ── Data fetching ──────────────────────────────────────────────────────────
   const { data: card } = useGetCard(selectedCardId > 0 ? selectedCardId : 0, { 
@@ -751,8 +749,8 @@ export default function CardDetailDrawer() {
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="__none__">None</SelectItem>
-                                {DATA_SOURCES.map(ds => (
-                                  <SelectItem key={ds} value={ds}>{ds}</SelectItem>
+                                {dataSources.map(ds => (
+                                  <SelectItem key={ds.id} value={ds.name}>{ds.name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -771,8 +769,8 @@ export default function CardDetailDrawer() {
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="__none__">None</SelectItem>
-                                {COHORTS.map(c => (
-                                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                                {cohorts.map(c => (
+                                  <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>

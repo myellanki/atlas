@@ -10,3 +10,4 @@ export * from "./activity";
 export * from "./sprints";
 export * from "./milestones";
 export * from "./deliverables";
+export * from "./customTags";

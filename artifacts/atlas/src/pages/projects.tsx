@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef } from "react";
 import { useListCards, useListTeams, useListMembers } from "@workspace/api-client-react";
+import { useTagsByCategory } from "@/hooks/use-tags";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,12 +18,6 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-
-const DATA_SOURCES = ["CDW", "VINCI", "TriNetX", "Cancer Registry", "Survey", "VA Benefits", "External Cohort", "Other"];
-const COHORTS = [
-  "Vietnam Veterans", "Gulf War", "Post-9/11 OEF/OIF", "WWII", "Korea", "General VA",
-  "Bladder Cancer", "Prostate Cancer", "Lung Cancer", "Colorectal Cancer", "Breast Cancer", "Melanoma", "Other",
-];
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 function fallbackSummary(note: string | null | undefined, dueDate: string | null | undefined): string {
@@ -55,6 +50,8 @@ export default function ProjectsPage() {
   const { data: allCards, isLoading: loadingCards } = useListCards({});
   const { data: allTeams, isLoading: loadingTeams } = useListTeams();
   const { data: allMembers } = useListMembers();
+  const { data: dataSources = [] } = useTagsByCategory("data_source");
+  const { data: cohorts = [] } = useTagsByCategory("cohort");
 
   const [openGanttKey, setOpenGanttKey] = useState<string | null>(null);
   const [collapsedTeams, setCollapsedTeams] = useState<Set<number>>(new Set());
@@ -276,8 +273,8 @@ export default function ProjectsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Sources</SelectItem>
-                  {DATA_SOURCES.map(ds => (
-                    <SelectItem key={ds} value={ds}>{ds}</SelectItem>
+                  {dataSources.map(ds => (
+                    <SelectItem key={ds.id} value={ds.name}>{ds.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -291,8 +288,8 @@ export default function ProjectsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Cohorts</SelectItem>
-                  {COHORTS.map(c => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  {cohorts.map(c => (
+                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

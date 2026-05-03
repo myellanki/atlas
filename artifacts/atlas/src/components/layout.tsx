@@ -10,7 +10,7 @@ import {
   LayoutDashboard, Tags, Settings, UserCircle,
   Plus, CalendarDays, Layers, Bell, BellOff,
   AlertCircle, Clock, ChevronDown, ChevronRight, X,
-  Flag, ClipboardList, BookOpen, Users, Flame,
+  Flag, ClipboardList, BookOpen, Users, Flame, Tag,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem,
@@ -140,7 +140,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 : location === "/portfolio" ? "Portfolio — Utilization"
                   : location === "/capacity" ? "Capacity Heat Calendar"
                     : location === "/publications" ? "Publications"
-                      : location.startsWith("/board/") ? `${location.split("/")[2]?.toUpperCase()} Board`
+                      : location === "/tag-settings" ? "Tag Settings"
+                        : location.startsWith("/board/") ? `${location.split("/")[2]?.toUpperCase()} Board`
                         : location.startsWith("/gantt/") ? "Gantt"
                           : "Atlas";
 
@@ -218,6 +219,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       <Link href="/templates" className="text-sidebar-foreground hover:bg-sidebar-accent flex items-center gap-2">
                         <ClipboardList className="w-4 h-4" />
                         <span>Card Templates</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/tag-settings"}>
+                      <Link href="/tag-settings" className="text-sidebar-foreground hover:bg-sidebar-accent flex items-center gap-2">
+                        <Tag className="w-4 h-4" />
+                        <span>Tag Settings</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
