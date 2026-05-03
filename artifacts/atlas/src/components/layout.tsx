@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import GlobalSearch from "@/components/global-search";
 import { Link, useLocation } from "wouter";
 import { useAppStore } from "@/lib/store";
 import {
@@ -11,6 +12,7 @@ import {
   Plus, CalendarDays, Layers, Bell, BellOff,
   AlertCircle, Clock, ChevronDown, ChevronRight, X,
   Flag, ClipboardList, BookOpen, Users, Flame, Tag,
+  Search, ShieldCheck,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem,
@@ -46,6 +48,18 @@ function slugify(name: string) {
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { role, setRole, setSelectedCardId } = useAppStore();
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setIsSearchOpen(o => !o);
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
   const { data: teams } = useListTeams();
   const { data: allCards } = useListCards({});
   const queryClient = useQueryClient();
@@ -141,6 +155,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   : location === "/capacity" ? "Capacity Heat Calendar"
                     : location === "/publications" ? "Publications"
                       : location === "/tag-settings" ? "Tag Settings"
+                      : location === "/irb" ? "IRB & Regulatory Tracker"
                         : location.startsWith("/board/") ? `${location.split("/")[2]?.toUpperCase()} Board`
                         : location.startsWith("/gantt/") ? "Gantt"
                           : "Atlas";
@@ -227,6 +242,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       <Link href="/tag-settings" className="text-sidebar-foreground hover:bg-sidebar-accent flex items-center gap-2">
                         <Tag className="w-4 h-4" />
                         <span>Tag Settings</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            {/* Compliance section */}
+            <SidebarGroup>
+              <SidebarGroupLabel className="text-sidebar-foreground/60 uppercase text-xs tracking-wider">
+                Compliance
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location === "/irb"}>
+                      <Link href="/irb" className="text-sidebar-foreground hover:bg-sidebar-accent flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>IRB Tracker</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -412,6 +446,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Global search trigger */}
+              <button
+                onClick={() => setIsSearchOpen(true)}
+                className="flex items-center gap-2 h-8 px-3 rounded-md border bg-muted/40 hover:bg-muted text-sm text-muted-foreground transition-colors"
+                title="Search (⌘K)"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline text-xs">Search…</span>
+                <kbd className="hidden sm:flex items-center gap-0.5 text-[10px] bg-background border rounded px-1 py-0.5 ml-1">⌘K</kbd>
+              </button>
+
               {/* Compact alert badge in header (visible when sidebar is collapsed) */}
               {totalUrgent > 0 && (
                 <button
@@ -455,6 +500,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+
+      <GlobalSearch open={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
 
       {/* ── Add New Team Dialog ──────────────────────────────────────────────── */}
       <Dialog open={showNewTeam} onOpenChange={open => { setShowNewTeam(open); if (!open) resetDialog(); }}>

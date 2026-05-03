@@ -17,6 +17,9 @@ import deliverablesRouter from "./deliverables";
 import portfolioRouter from "./portfolio";
 import customTagsRouter from "./customTags";
 import cardTemplatesRouter from "./cardTemplates";
+import searchRouter from "./search";
+import irbRouter from "./irb";
+import attachmentsRouter from "./attachments";
 
 const router: IRouter = Router();
 
@@ -38,5 +41,8 @@ router.use(deliverablesRouter);
 router.use(portfolioRouter);
 router.use(customTagsRouter);
 router.use(cardTemplatesRouter);
+router.use(searchRouter);
+router.use(irbRouter);
+router.use(attachmentsRouter);
 
 export default router;

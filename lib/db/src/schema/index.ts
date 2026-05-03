@@ -12,3 +12,5 @@ export * from "./milestones";
 export * from "./deliverables";
 export * from "./customTags";
 export * from "./cardTemplates";
+export * from "./irbSubmissions";
+export * from "./cardAttachments";

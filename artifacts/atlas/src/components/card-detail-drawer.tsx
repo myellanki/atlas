@@ -42,7 +42,8 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import {
   CalendarIcon, MessageSquare, Plus, CheckSquare, Tags, Trash2, X,
   Send, AlertCircle, Users, Link2, ExternalLink, ArrowUpRight, Globe, Layers,
-  BookOpen, Database, Filter as FilterIcon,
+  BookOpen, Database, Filter as FilterIcon, Paperclip, Download, FileText,
+  File, ImageIcon, FileSpreadsheet,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
@@ -146,6 +147,64 @@ export default function CardDetailDrawer() {
   const [tagCohort, setTagCohort] = useState<string>("");
   const [savingTags, setSavingTags] = useState(false);
 
+  // Attachments state
+  interface Attachment { id: number; cardId: number; filename: string; originalName: string; mimeType: string | null; fileSize: number | null; uploadedAt: string; }
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [loadingAttachments, setLoadingAttachments] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchAttachments = async (cardId: number) => {
+    setLoadingAttachments(true);
+    try {
+      const r = await fetch(`${BASE}/api/cards/${cardId}/attachments`);
+      const data = await r.json();
+      setAttachments(data);
+    } catch { /* ignore */ } finally { setLoadingAttachments(false); }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedCardId || selectedCardId < 1) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await fetch(`${BASE}/api/cards/${selectedCardId}/attachments`, { method: "POST", body: fd });
+      if (!r.ok) throw new Error((await r.json()).error ?? "Upload failed");
+      await fetchAttachments(selectedCardId);
+      toast({ title: `Uploaded "${file.name}"` });
+    } catch (err: unknown) {
+      toast({ title: (err as Error).message || "Upload failed", variant: "destructive" });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDeleteAttachment = async (att: Attachment) => {
+    if (!selectedCardId) return;
+    await fetch(`${BASE}/api/cards/${selectedCardId}/attachments/${att.id}`, { method: "DELETE" });
+    setAttachments(prev => prev.filter(a => a.id !== att.id));
+    toast({ title: `Removed "${att.originalName}"` });
+  };
+
+  function attachmentIcon(mime: string | null) {
+    if (!mime) return <File className="w-4 h-4" />;
+    if (mime.startsWith("image/")) return <ImageIcon className="w-4 h-4 text-purple-500" />;
+    if (mime === "application/pdf") return <FileText className="w-4 h-4 text-red-500" />;
+    if (mime.includes("sheet") || mime.includes("excel") || mime === "text/csv") return <FileSpreadsheet className="w-4 h-4 text-green-600" />;
+    if (mime.includes("word")) return <FileText className="w-4 h-4 text-blue-500" />;
+    return <File className="w-4 h-4 text-muted-foreground" />;
+  }
+
+  function formatBytes(bytes: number | null) {
+    if (!bytes) return "";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1048576).toFixed(1)} MB`;
+  }
+
   const initializedForId = useRef<number | null>(null);
 
   // ── Sync card data to local state ──────────────────────────────────────────
@@ -172,10 +231,11 @@ export default function CardDetailDrawer() {
     }
   }, [showLinkDialog]);
 
-  // Load deliverables + sync tags when card changes
+  // Load deliverables + attachments + sync tags when card changes
   useEffect(() => {
     if (!card || selectedCardId <= 0) {
       setDeliverables([]);
+      setAttachments([]);
       return;
     }
     setLoadingDeliverables(true);
@@ -184,6 +244,7 @@ export default function CardDetailDrawer() {
       .then(data => setDeliverables(Array.isArray(data) ? data : []))
       .catch(() => setDeliverables([]))
       .finally(() => setLoadingDeliverables(false));
+    fetchAttachments(card.id);
     // sync tag state from card (uses 'any' because the generated type doesn't include these fields yet)
     setTagDataSource((card as any).dataSource ?? "");
     setTagCohort((card as any).cohort ?? "");
@@ -723,6 +784,76 @@ export default function CardDetailDrawer() {
                         ) : (
                           <div className="text-sm text-muted-foreground text-center py-4 border border-dashed rounded-lg">
                             No links yet.{isAdmin && " Click \"Add Link\" to attach a URL or card."}
+                          </div>
+                        )}
+                      </div>
+
+                      <Separator />
+
+                      {/* ── Attachments ───────────────────────────────────────── */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label className="font-semibold text-sm flex items-center gap-2">
+                            <Paperclip className="w-4 h-4 text-primary" /> Attachments
+                            {attachments.length > 0 && (
+                              <span className="text-xs font-normal text-muted-foreground">({attachments.length})</span>
+                            )}
+                          </Label>
+                          {isAdmin && !isNew && (
+                            <>
+                              <input
+                                ref={fileInputRef}
+                                type="file"
+                                className="hidden"
+                                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg,.gif,.webp,.zip"
+                                onChange={handleFileUpload}
+                              />
+                              <Button variant="outline" size="sm" className="h-7 text-xs gap-1"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={uploading}>
+                                {uploading ? "Uploading…" : <><Plus className="w-3 h-3" /> Attach File</>}
+                              </Button>
+                            </>
+                          )}
+                        </div>
+
+                        {loadingAttachments ? (
+                          <Skeleton className="h-10 rounded" />
+                        ) : attachments.length === 0 ? (
+                          <div className="text-sm text-muted-foreground text-center py-3 border border-dashed rounded-lg">
+                            No files attached.{isAdmin && !isNew && " Click \"Attach File\" to upload."}
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {attachments.map(att => (
+                              <div key={att.id}
+                                className="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-card group hover:bg-muted/20 transition-colors">
+                                <div className="shrink-0">{attachmentIcon(att.mimeType)}</div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-medium truncate">{att.originalName}</p>
+                                  <p className="text-[10px] text-muted-foreground">
+                                    {formatBytes(att.fileSize)}
+                                  </p>
+                                </div>
+                                <a
+                                  href={`${BASE}/api/attachments/${att.filename}`}
+                                  download={att.originalName}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                                  title="Download">
+                                  <Download className="w-3.5 h-3.5" />
+                                </a>
+                                {isAdmin && (
+                                  <button
+                                    onClick={() => handleDeleteAttachment(att)}
+                                    className="p-1.5 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                    title="Remove">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>

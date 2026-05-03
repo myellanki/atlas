@@ -17,6 +17,7 @@ import Portfolio from "@/pages/portfolio";
 import Capacity from "@/pages/capacity";
 import Publications from "@/pages/publications";
 import TagSettings from "@/pages/tag-settings";
+import Irb from "@/pages/irb";
 
 const queryClient = new QueryClient();
 
@@ -36,6 +37,7 @@ function Router() {
       <Route path="/capacity" component={Capacity} />
       <Route path="/publications" component={Publications} />
       <Route path="/tag-settings" component={TagSettings} />
+      <Route path="/irb" component={Irb} />
       <Route component={NotFound} />
     </Switch>
   );
