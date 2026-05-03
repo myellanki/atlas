@@ -16,6 +16,7 @@ import milestonesRouter from "./milestones";
 import deliverablesRouter from "./deliverables";
 import portfolioRouter from "./portfolio";
 import customTagsRouter from "./customTags";
+import cardTemplatesRouter from "./cardTemplates";
 
 const router: IRouter = Router();
 
@@ -36,5 +37,6 @@ router.use(milestonesRouter);
 router.use(deliverablesRouter);
 router.use(portfolioRouter);
 router.use(customTagsRouter);
+router.use(cardTemplatesRouter);
 
 export default router;

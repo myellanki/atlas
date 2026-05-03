@@ -1,184 +1,334 @@
-import React, { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import React, { useState, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useListCards, useListTeams } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import {
   BookOpen, GitBranch, Beaker, FileText, CheckSquare,
   Plus, ClipboardList, ChevronDown, ChevronRight, Zap,
+  Pencil, Trash2, X, GripVertical, ArrowUp, ArrowDown,
+  FlaskConical, BarChart2, Microscope, Database, Layers,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
-// ── Card templates (institutional knowledge baked in) ─────────────────────────
-interface ChecklistTemplate {
-  text: string;
-  done: boolean;
-}
-
-interface CardTemplate {
-  id: string;
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  color: string;
-  defaultStatus: string;
-  defaultPriority: string;
-  checklist: ChecklistTemplate[];
-  tags: string[];
-}
-
-const TEMPLATES: CardTemplate[] = [
-  {
-    id: "new_research_study",
-    title: "New Research Study",
-    description: "Full lifecycle for a new VA clinical research project from conception to dissemination.",
-    icon: <Beaker className="w-5 h-5" />,
-    color: "#8b5cf6",
-    defaultStatus: "not_started",
-    defaultPriority: "high",
-    tags: ["research", "IRB", "VA"],
-    checklist: [
-      { text: "Define research question and specific aims", done: false },
-      { text: "Literature review and gap analysis", done: false },
-      { text: "Draft study protocol", done: false },
-      { text: "Submit IRB application", done: false },
-      { text: "Obtain IRB approval", done: false },
-      { text: "Data access request (CDW / VINCI / TriNetX)", done: false },
-      { text: "Data access approved", done: false },
-      { text: "Data extraction and validation", done: false },
-      { text: "Exploratory data analysis (EDA)", done: false },
-      { text: "Statistical analysis plan (SAP)", done: false },
-      { text: "Run primary analyses", done: false },
-      { text: "Draft manuscript", done: false },
-      { text: "Internal review and revisions", done: false },
-      { text: "Submit to target journal", done: false },
-      { text: "Address peer review comments", done: false },
-      { text: "Manuscript accepted", done: false },
-      { text: "Dissemination (conference / brief / operations brief)", done: false },
-    ],
-  },
-  {
-    id: "data_pipeline",
-    title: "Data Pipeline Build",
-    description: "Standard steps for building a new data extraction, transformation, and loading pipeline.",
-    icon: <GitBranch className="w-5 h-5" />,
-    color: "#0ea5e9",
-    defaultStatus: "not_started",
-    defaultPriority: "medium",
-    tags: ["data", "engineering", "pipeline"],
-    checklist: [
-      { text: "Define data requirements and sources", done: false },
-      { text: "Request data access (VA CDW / VINCI)", done: false },
-      { text: "Schema discovery and documentation", done: false },
-      { text: "Draft extraction query (SQL / SAS)", done: false },
-      { text: "Data quality assessment (nulls, ranges, duplicates)", done: false },
-      { text: "Cohort definition and inclusion/exclusion criteria", done: false },
-      { text: "Variable derivation and calculated fields", done: false },
-      { text: "De-identification / PHI removal check", done: false },
-      { text: "Pipeline unit tests", done: false },
-      { text: "Generate data dictionary", done: false },
-      { text: "Peer code review", done: false },
-      { text: "Final dataset locked and versioned", done: false },
-      { text: "Analytic file delivered to team", done: false },
-    ],
-  },
-  {
-    id: "app_feature_sprint",
-    title: "App Feature Sprint",
-    description: "Agile sprint checklist for building and deploying a new application feature.",
-    icon: <Zap className="w-5 h-5" />,
-    color: "#10b981",
-    defaultStatus: "not_started",
-    defaultPriority: "medium",
-    tags: ["dev", "sprint", "feature"],
-    checklist: [
-      { text: "Requirements gathering and stakeholder sign-off", done: false },
-      { text: "Technical design / architecture review", done: false },
-      { text: "Create feature branch", done: false },
-      { text: "Backend API implementation", done: false },
-      { text: "Frontend UI implementation", done: false },
-      { text: "Unit and integration tests", done: false },
-      { text: "Internal UAT (user acceptance testing)", done: false },
-      { text: "Accessibility and security review", done: false },
-      { text: "Documentation updated", done: false },
-      { text: "Code review approved", done: false },
-      { text: "Merge to main / deploy to staging", done: false },
-      { text: "Stakeholder demo and sign-off", done: false },
-      { text: "Deploy to production", done: false },
-      { text: "Post-deploy monitoring (24–48h)", done: false },
-    ],
-  },
-  {
-    id: "manuscript_preparation",
-    title: "Manuscript Preparation",
-    description: "Focused checklist for taking analysis results through to a published paper.",
-    icon: <FileText className="w-5 h-5" />,
-    color: "#f59e0b",
-    defaultStatus: "not_started",
-    defaultPriority: "high",
-    tags: ["writing", "manuscript", "publication"],
-    checklist: [
-      { text: "Finalize analysis results (tables, figures)", done: false },
-      { text: "Select target journal and review submission guidelines", done: false },
-      { text: "Draft Introduction", done: false },
-      { text: "Draft Methods", done: false },
-      { text: "Draft Results", done: false },
-      { text: "Draft Discussion and Conclusion", done: false },
-      { text: "Compile references (EndNote / Zotero)", done: false },
-      { text: "Author list finalized and contributions documented", done: false },
-      { text: "Co-author review round 1", done: false },
-      { text: "Address co-author comments", done: false },
-      { text: "VA Public Affairs / Operations review (if required)", done: false },
-      { text: "Final proofreading", done: false },
-      { text: "Format per journal guidelines", done: false },
-      { text: "Submit via journal portal", done: false },
-      { text: "Acknowledge receipt / tracking number", done: false },
-    ],
-  },
+// ── Icon map ──────────────────────────────────────────────────────────────────
+const ICON_OPTIONS = [
+  { value: "ClipboardList", label: "Clipboard",  el: <ClipboardList className="w-5 h-5" /> },
+  { value: "Beaker",        label: "Beaker",     el: <Beaker className="w-5 h-5" /> },
+  { value: "FlaskConical",  label: "Flask",      el: <FlaskConical className="w-5 h-5" /> },
+  { value: "Microscope",    label: "Microscope", el: <Microscope className="w-5 h-5" /> },
+  { value: "GitBranch",     label: "Pipeline",   el: <GitBranch className="w-5 h-5" /> },
+  { value: "Database",      label: "Database",   el: <Database className="w-5 h-5" /> },
+  { value: "Zap",           label: "Sprint",     el: <Zap className="w-5 h-5" /> },
+  { value: "FileText",      label: "Document",   el: <FileText className="w-5 h-5" /> },
+  { value: "BookOpen",      label: "Book",       el: <BookOpen className="w-5 h-5" /> },
+  { value: "BarChart2",     label: "Analytics",  el: <BarChart2 className="w-5 h-5" /> },
+  { value: "Layers",        label: "Layers",     el: <Layers className="w-5 h-5" /> },
 ];
 
-interface Card {
-  id: number;
-  title: string;
-  teamId: number;
-  status: string;
+function renderIcon(name: string, className = "w-5 h-5") {
+  const found = ICON_OPTIONS.find(o => o.value === name);
+  if (found) {
+    return React.cloneElement(found.el, { className });
+  }
+  return <ClipboardList className={className} />;
 }
 
-interface Team {
-  id: number;
-  name: string;
-  color: string;
+// ── Colour palette ─────────────────────────────────────────────────────────────
+const COLOR_OPTIONS = [
+  "#8b5cf6", "#0ea5e9", "#10b981", "#f59e0b",
+  "#ef4444", "#ec4899", "#f97316", "#6366f1",
+  "#14b8a6", "#84cc16", "#64748b", "#1d4ed8",
+];
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface TemplateItem { id: number; templateId: number; text: string; position: number; }
+interface Template {
+  id: number; name: string; description: string | null;
+  color: string; icon: string; position: number; items: TemplateItem[];
+}
+interface Card   { id: number; title: string; teamId: number; status: string; }
+interface Team   { id: number; name: string; color: string; }
+
+// ── Template editor dialog ────────────────────────────────────────────────────
+interface EditorProps {
+  open: boolean;
+  initial: Template | null; // null = create mode
+  onClose: () => void;
+  onSaved: () => void;
 }
 
+function TemplateEditor({ open, initial, onClose, onSaved }: EditorProps) {
+  const { toast } = useToast();
+  const isEdit = !!initial;
+
+  const [name, setName]           = useState(initial?.name ?? "");
+  const [desc, setDesc]           = useState(initial?.description ?? "");
+  const [color, setColor]         = useState(initial?.color ?? "#8b5cf6");
+  const [icon, setIcon]           = useState(initial?.icon ?? "ClipboardList");
+  const [items, setItems]         = useState<string[]>(initial?.items.map(i => i.text) ?? []);
+  const [newItem, setNewItem]     = useState("");
+  const [saving, setSaving]       = useState(false);
+  const newItemRef = useRef<HTMLInputElement>(null);
+
+  // reset when dialog opens
+  React.useEffect(() => {
+    if (open) {
+      setName(initial?.name ?? "");
+      setDesc(initial?.description ?? "");
+      setColor(initial?.color ?? "#8b5cf6");
+      setIcon(initial?.icon ?? "ClipboardList");
+      setItems(initial?.items.map(i => i.text) ?? []);
+      setNewItem("");
+    }
+  }, [open, initial]);
+
+  const addItem = () => {
+    const t = newItem.trim();
+    if (!t) return;
+    setItems(prev => [...prev, t]);
+    setNewItem("");
+    setTimeout(() => newItemRef.current?.focus(), 30);
+  };
+
+  const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
+
+  const moveItem = (idx: number, dir: -1 | 1) => {
+    setItems(prev => {
+      const next = [...prev];
+      const swap = idx + dir;
+      if (swap < 0 || swap >= next.length) return next;
+      [next[idx], next[swap]] = [next[swap], next[idx]];
+      return next;
+    });
+  };
+
+  const updateItem = (idx: number, val: string) => {
+    setItems(prev => prev.map((t, i) => (i === idx ? val : t)));
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) { toast({ title: "Name is required", variant: "destructive" }); return; }
+    setSaving(true);
+    const body = { name: name.trim(), description: desc.trim() || null, color, icon, items: items.filter(Boolean) };
+    try {
+      const url  = isEdit ? `${BASE}/api/templates/${initial!.id}` : `${BASE}/api/templates`;
+      const method = isEdit ? "PATCH" : "POST";
+      const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) throw new Error();
+      onSaved();
+      onClose();
+    } catch {
+      toast({ title: "Failed to save template", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col gap-0 p-0">
+        <DialogHeader className="px-6 pt-5 pb-3 border-b shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white shrink-0"
+              style={{ backgroundColor: color }}>
+              {renderIcon(icon, "w-4 h-4")}
+            </div>
+            {isEdit ? `Edit "${initial!.name}"` : "New Template"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <ScrollArea className="flex-1 overflow-y-auto">
+          <div className="px-6 py-4 space-y-5">
+            {/* Name */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Name <span className="text-destructive">*</span></Label>
+              <Input value={name} onChange={e => setName(e.target.value)}
+                placeholder="e.g. Grant Proposal Checklist" className="h-9" />
+            </div>
+
+            {/* Description */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Description</Label>
+              <Textarea value={desc} onChange={e => setDesc(e.target.value)}
+                placeholder="Briefly describe when to use this template…"
+                className="resize-none text-sm" rows={2} />
+            </div>
+
+            {/* Color + Icon */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold">Colour</Label>
+                <div className="flex flex-wrap gap-2">
+                  {COLOR_OPTIONS.map(c => (
+                    <button key={c} onClick={() => setColor(c)}
+                      className={cn(
+                        "w-7 h-7 rounded-full border-2 transition-all",
+                        color === c ? "border-foreground scale-110 shadow" : "border-transparent hover:scale-105"
+                      )}
+                      style={{ backgroundColor: c }} />
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold">Icon</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {ICON_OPTIONS.map(o => (
+                    <button key={o.value} onClick={() => setIcon(o.value)}
+                      title={o.label}
+                      className={cn(
+                        "w-8 h-8 rounded-lg border flex items-center justify-center transition-all",
+                        icon === o.value
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border hover:border-muted-foreground text-muted-foreground hover:text-foreground"
+                      )}>
+                      {o.el}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Checklist items */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold">
+                  Checklist Items
+                  <span className="ml-2 font-normal text-muted-foreground">({items.length})</span>
+                </Label>
+              </div>
+
+              <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+                {items.length === 0 && (
+                  <p className="text-xs text-muted-foreground text-center py-4">
+                    No items yet — add one below.
+                  </p>
+                )}
+                {items.map((text, idx) => (
+                  <div key={idx}
+                    className="flex items-center gap-1.5 group rounded-lg border bg-card px-2 py-1.5 hover:bg-muted/20">
+                    <GripVertical className="w-3.5 h-3.5 text-muted-foreground/30 shrink-0" />
+                    <span className="w-5 h-5 flex items-center justify-center shrink-0
+                      text-[10px] text-muted-foreground font-mono">{idx + 1}</span>
+                    <Input
+                      value={text}
+                      onChange={e => updateItem(idx, e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); newItemRef.current?.focus(); } }}
+                      className="h-6 border-0 shadow-none px-1 focus-visible:ring-0 bg-transparent text-sm flex-1"
+                    />
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => moveItem(idx, -1)} disabled={idx === 0}
+                        className="p-0.5 rounded hover:bg-muted disabled:opacity-20 text-muted-foreground">
+                        <ArrowUp className="w-3 h-3" />
+                      </button>
+                      <button onClick={() => moveItem(idx, 1)} disabled={idx === items.length - 1}
+                        className="p-0.5 rounded hover:bg-muted disabled:opacity-20 text-muted-foreground">
+                        <ArrowDown className="w-3 h-3" />
+                      </button>
+                      <button onClick={() => removeItem(idx)}
+                        className="p-0.5 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Add item */}
+              <div className="flex gap-2 mt-1">
+                <Input
+                  ref={newItemRef}
+                  value={newItem}
+                  onChange={e => setNewItem(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addItem(); } }}
+                  placeholder="Type a new checklist item and press Enter…"
+                  className="h-8 text-sm"
+                />
+                <Button type="button" variant="outline" size="sm" className="h-8 shrink-0 gap-1"
+                  onClick={addItem} disabled={!newItem.trim()}>
+                  <Plus className="w-3.5 h-3.5" /> Add
+                </Button>
+              </div>
+            </div>
+          </div>
+        </ScrollArea>
+
+        <DialogFooter className="px-6 py-4 border-t shrink-0">
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving || !name.trim()}>
+            {saving ? "Saving…" : isEdit ? "Save Changes" : "Create Template"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function TemplatesPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: allCards = [] } = useListCards({});
-  const { data: teams = [] } = useListTeams();
+  const { data: teams = [] }   = useListTeams();
 
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [applyDialog, setApplyDialog] = useState<CardTemplate | null>(null);
+  const { data: templates = [], isLoading } = useQuery<Template[]>({
+    queryKey: ["templates"],
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/templates`);
+      return r.json();
+    },
+  });
+
+  const [expandedId, setExpandedId]   = useState<number | null>(null);
+  const [editorOpen, setEditorOpen]   = useState(false);
+  const [editTarget, setEditTarget]   = useState<Template | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Template | null>(null);
+
+  // Apply-to-card state
+  const [applyDialog, setApplyDialog]     = useState<Template | null>(null);
   const [selectedCardId, setSelectedCardId] = useState<string>("");
-  const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
-  const [applying, setApplying] = useState(false);
+  const [selectedItems, setSelectedItems]   = useState<Set<number>>(new Set());
+  const [applying, setApplying]           = useState(false);
 
-  const openApplyDialog = (tpl: CardTemplate) => {
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["templates"] });
+
+  const openCreate = () => { setEditTarget(null); setEditorOpen(true); };
+  const openEdit   = (tpl: Template) => { setEditTarget(tpl); setEditorOpen(true); };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    await fetch(`${BASE}/api/templates/${deleteTarget.id}`, { method: "DELETE" });
+    refresh();
+    toast({ title: `Deleted "${deleteTarget.name}"` });
+    setDeleteTarget(null);
+  };
+
+  const openApplyDialog = (tpl: Template) => {
     setApplyDialog(tpl);
     setSelectedCardId("");
-    setSelectedItems(new Set(tpl.checklist.map((_, i) => i)));
+    setSelectedItems(new Set(tpl.items.map((_, i) => i)));
   };
 
   const toggleItem = (i: number) =>
@@ -192,15 +342,14 @@ export default function TemplatesPage() {
     if (!applyDialog || !selectedCardId) return;
     setApplying(true);
     const cardId = parseInt(selectedCardId);
-
-    const items = applyDialog.checklist.filter((_, i) => selectedItems.has(i));
+    const items  = applyDialog.items.filter((_, i) => selectedItems.has(i));
     try {
       await Promise.all(
         items.map((item, idx) =>
           fetch(`${BASE}/api/cards/${cardId}/checklist`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: item.text, done: item.done, position: idx }),
+            body: JSON.stringify({ text: item.text, done: false, position: idx }),
           })
         )
       );
@@ -214,8 +363,7 @@ export default function TemplatesPage() {
     }
   };
 
-  const teamMap = Object.fromEntries((teams as Team[]).map(t => [t.id, t]));
-
+  const teamMap   = Object.fromEntries((teams as Team[]).map(t => [t.id, t]));
   const cardsByTeam = (teams as Team[]).map(t => ({
     team: t,
     cards: (allCards as Card[]).filter(c => c.teamId === t.id && c.status !== "done"),
@@ -223,88 +371,160 @@ export default function TemplatesPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-[1200px] mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <ClipboardList className="w-6 h-6 text-primary" />
-          Card Templates
-        </h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Pre-built checklists with institutional knowledge baked in. Apply any template to an existing card — nothing is applied automatically.
-        </p>
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <ClipboardList className="w-6 h-6 text-primary" />
+            Card Templates
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Pre-built checklists with institutional knowledge baked in.
+            Apply any template to an existing card — nothing is applied automatically.
+          </p>
+        </div>
+        <Button onClick={openCreate} className="gap-2 shrink-0">
+          <Plus className="w-4 h-4" /> New Template
+        </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {TEMPLATES.map(tpl => {
-          const isExpanded = expandedId === tpl.id;
-          return (
-            <div key={tpl.id}
-              className="border rounded-xl bg-card shadow-sm overflow-hidden hover:shadow-md transition-shadow">
-              {/* Card header */}
-              <div className="p-4 pb-3 flex items-start gap-3">
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-white"
-                  style={{ backgroundColor: tpl.color }}>
-                  {tpl.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-base">{tpl.title}</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{tpl.description}</p>
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {tpl.tags.map(tag => (
-                      <Badge key={tag} variant="secondary" className="text-[10px] px-1.5 py-0">{tag}</Badge>
-                    ))}
+      {/* Grid */}
+      {isLoading ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          {[1,2,3,4].map(i => (
+            <div key={i} className="border rounded-xl bg-card h-44 animate-pulse" />
+          ))}
+        </div>
+      ) : templates.length === 0 ? (
+        <div className="text-center py-20 text-muted-foreground">
+          <ClipboardList className="w-10 h-10 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">No templates yet.</p>
+          <Button variant="outline" size="sm" className="mt-3 gap-2" onClick={openCreate}>
+            <Plus className="w-3.5 h-3.5" /> Create your first template
+          </Button>
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {templates.map(tpl => {
+            const isExpanded = expandedId === tpl.id;
+            return (
+              <div key={tpl.id}
+                className="border rounded-xl bg-card shadow-sm overflow-hidden hover:shadow-md transition-shadow flex flex-col">
+                {/* Card header */}
+                <div className="p-4 pb-3 flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-white"
+                    style={{ backgroundColor: tpl.color }}>
+                    {renderIcon(tpl.icon, "w-5 h-5")}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-base leading-tight">{tpl.name}</h3>
+                    {tpl.description && (
+                      <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed line-clamp-2">
+                        {tpl.description}
+                      </p>
+                    )}
+                  </div>
+                  {/* Edit / delete */}
+                  <div className="flex items-center gap-1 shrink-0 ml-1">
+                    <button
+                      onClick={() => openEdit(tpl)}
+                      className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                      title="Edit template">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setDeleteTarget(tpl)}
+                      className="p-1.5 rounded-lg hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors"
+                      title="Delete template">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
-              </div>
 
-              {/* Checklist preview */}
-              <div
-                className="border-t cursor-pointer"
-                onClick={() => setExpandedId(isExpanded ? null : tpl.id)}
-              >
-                <div className="flex items-center justify-between px-4 py-2 bg-muted/20 hover:bg-muted/40 transition-colors">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <CheckSquare className="w-3.5 h-3.5" />
-                    <span>{tpl.checklist.length} checklist items</span>
-                  </div>
-                  {isExpanded
-                    ? <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                    : <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                  }
-                </div>
-
-                {isExpanded && (
-                  <ScrollArea className="max-h-56">
-                    <div className="px-4 py-2 space-y-1.5">
-                      {tpl.checklist.map((item, i) => (
-                        <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
-                          <div className="w-3.5 h-3.5 rounded border border-border mt-0.5 shrink-0" />
-                          <span>{item.text}</span>
-                        </div>
-                      ))}
+                {/* Checklist toggle */}
+                <div
+                  className="border-t cursor-pointer"
+                  onClick={() => setExpandedId(isExpanded ? null : tpl.id)}>
+                  <div className="flex items-center justify-between px-4 py-2 bg-muted/20 hover:bg-muted/40 transition-colors">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <CheckSquare className="w-3.5 h-3.5" />
+                      <span>{tpl.items.length} checklist item{tpl.items.length !== 1 ? "s" : ""}</span>
                     </div>
-                  </ScrollArea>
-                )}
-              </div>
+                    {isExpanded
+                      ? <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                      : <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    }
+                  </div>
 
-              {/* Apply button */}
-              <div className="px-4 py-3 border-t bg-muted/10">
-                <Button size="sm" className="w-full gap-2 h-8"
-                  onClick={() => openApplyDialog(tpl)}>
-                  <Plus className="w-3.5 h-3.5" /> Apply to Card
-                </Button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+                  {isExpanded && (
+                    <ScrollArea className="max-h-56">
+                      <div className="px-4 py-2 space-y-1.5">
+                        {tpl.items.map((item, i) => (
+                          <div key={item.id} className="flex items-start gap-2 text-xs text-muted-foreground">
+                            <span className="w-4 shrink-0 text-right font-mono text-[10px] mt-0.5 text-muted-foreground/50">
+                              {i + 1}
+                            </span>
+                            <div className="w-3.5 h-3.5 rounded border border-border mt-0.5 shrink-0" />
+                            <span>{item.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  )}
+                </div>
 
-      {/* Apply dialog */}
+                {/* Actions */}
+                <div className="px-4 py-3 border-t bg-muted/10 mt-auto flex gap-2">
+                  <Button size="sm" className="flex-1 gap-2 h-8"
+                    onClick={() => openApplyDialog(tpl)}>
+                    <Plus className="w-3.5 h-3.5" /> Apply to Card
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-8 px-3 gap-1.5"
+                    onClick={() => openEdit(tpl)}>
+                    <Pencil className="w-3 h-3" /> Edit
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Template editor */}
+      <TemplateEditor
+        open={editorOpen}
+        initial={editTarget}
+        onClose={() => setEditorOpen(false)}
+        onSaved={refresh}
+      />
+
+      {/* Delete confirm */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={o => { if (!o) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{deleteTarget?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This template and all its checklist items will be permanently removed.
+              Cards that had these items applied are unaffected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Apply-to-card dialog */}
       <Dialog open={!!applyDialog} onOpenChange={open => { if (!open) setApplyDialog(null); }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ClipboardList className="w-4 h-4 text-primary" />
-              Apply "{applyDialog?.title}" to Card
+              Apply "{applyDialog?.name}" to Card
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -335,7 +555,7 @@ export default function TemplatesPage() {
                 <Label className="text-xs font-semibold">Select Items to Apply</Label>
                 <div className="flex gap-2">
                   <Button variant="ghost" size="sm" className="h-6 text-xs"
-                    onClick={() => setSelectedItems(new Set(applyDialog!.checklist.map((_, i) => i)))}>
+                    onClick={() => setSelectedItems(new Set(applyDialog!.items.map((_, i) => i)))}>
                     All
                   </Button>
                   <Button variant="ghost" size="sm" className="h-6 text-xs"
@@ -346,8 +566,9 @@ export default function TemplatesPage() {
               </div>
               <ScrollArea className="h-56 border rounded-lg p-2">
                 <div className="space-y-1.5">
-                  {applyDialog?.checklist.map((item, i) => (
-                    <div key={i} className="flex items-start gap-2.5 py-1 px-1 rounded hover:bg-muted/30 cursor-pointer"
+                  {applyDialog?.items.map((item, i) => (
+                    <div key={item.id}
+                      className="flex items-start gap-2.5 py-1 px-1 rounded hover:bg-muted/30 cursor-pointer"
                       onClick={() => toggleItem(i)}>
                       <Checkbox checked={selectedItems.has(i)} className="mt-0.5 shrink-0" />
                       <span className="text-xs leading-relaxed">{item.text}</span>
@@ -356,7 +577,7 @@ export default function TemplatesPage() {
                 </div>
               </ScrollArea>
               <p className="text-[11px] text-muted-foreground">
-                {selectedItems.size} of {applyDialog?.checklist.length} items selected
+                {selectedItems.size} of {applyDialog?.items.length} items selected
               </p>
             </div>
           </div>
